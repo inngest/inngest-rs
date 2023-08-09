@@ -11,6 +11,7 @@ readme = "README.md"
 
 [dependencies]
 reqwest = "0.11"
-
-[dev-dependencies]
-axum = "0.6.20"
+axum = "0.6"
+hyper = { version = "0.14", features = ["full"] }
+tokio = { version = "1.29", features = ["full"] }
+tower = "0.4.13"
