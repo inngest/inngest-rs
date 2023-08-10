@@ -1,7 +1,22 @@
 use axum::{
     routing::{get, put},
-    Router,
+    Json, Router,
 };
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Deserialize, Serialize)]
+struct App {
+    #[serde(rename = "appName")]
+    app_name: String,
+    url: String,
+    v: String,
+    sdk: String,
+    framework: String,
+    functions: Vec<Function>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct Function {}
 
 #[tokio::main]
 async fn main() {
@@ -17,8 +32,17 @@ async fn main() {
         .unwrap();
 }
 
-async fn register() -> &'static str {
-    "Register"
+async fn register() -> Json<App> {
+    let payload = App {
+        app_name: "InngestApp".to_string(),
+        url: "http://127.0.0.1:3000/api/inngest".to_string(),
+        v: "1".to_string(),
+        sdk: "rust:v0.0.1".to_string(),
+        framework: "rust".to_string(),
+        functions: vec![],
+    };
+
+    Json(payload)
 }
 
 async fn invoke() -> &'static str {
