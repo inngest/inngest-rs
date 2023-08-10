@@ -1,6 +1,6 @@
 use axum::{
     routing::{get, put},
-    Json, Router,
+    Router,
 };
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +32,8 @@ async fn main() {
         .unwrap();
 }
 
-async fn register() -> Json<App> {
+async fn register() -> Result<(), String> {
+    let client = reqwest::Client::new();
     let payload = App {
         app_name: "InngestApp".to_string(),
         url: "http://127.0.0.1:3000/api/inngest".to_string(),
@@ -42,7 +43,15 @@ async fn register() -> Json<App> {
         functions: vec![],
     };
 
-    Json(payload)
+    match client
+        .post("http://127.0.0.1:8288")
+        .json(&payload)
+        .send()
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(_) => Err("error".to_string()),
+    }
 }
 
 async fn invoke() -> &'static str {
