@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 struct App {
     #[serde(rename = "appName")]
     app_name: String,
+    #[serde(rename = "deployType")]
+    deploy_type: String,
     url: String,
     v: String,
     sdk: String,
@@ -36,10 +38,11 @@ async fn register() -> Result<(), String> {
     let client = reqwest::Client::new();
     let payload = App {
         app_name: "InngestApp".to_string(),
+        deploy_type: "ping".to_string(),
         url: "http://127.0.0.1:3000/api/inngest".to_string(),
         v: "1".to_string(),
         sdk: "rust:v0.0.1".to_string(),
-        framework: "rust".to_string(),
+        framework: "axum".to_string(),
         functions: vec![],
     };
 
