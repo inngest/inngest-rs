@@ -3,8 +3,9 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct App {
     #[serde(rename = "appName")]
     app_name: String,
@@ -17,14 +18,14 @@ struct App {
     functions: Vec<Function>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct Trigger {
     event: Option<String>,
     expression: Option<String>,
     cron: Option<String>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct Function {
     id: String,
     name: String,
@@ -32,20 +33,20 @@ struct Function {
     steps: Vec<FunctionStep>,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct FunctionStep {
     id: String,
     name: String,
-    run_time: FunctionStepRuntime,
+    runtime: FunctionStepRuntime,
     retries: FunctionStepRetry,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct FunctionStepRetry {
     attempts: u8,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct FunctionStepRuntime {
     url: String,
     #[serde(rename = "type")]
@@ -71,8 +72,20 @@ async fn register() -> Result<(), String> {
     let func = Function {
         id: "dummy-func".to_string(),
         name: "Dummy func".to_string(),
-        triggers: vec![],
-        steps: vec![],
+        triggers: vec![Trigger {
+            event: Some("test/event".to_string()),
+            expression: None,
+            cron: None,
+        }],
+        steps: vec![FunctionStep {
+            id: "step".to_string(),
+            name: "step".to_string(),
+            runtime: FunctionStepRuntime {
+                url: "http://127.0.0.1:3000/api/inngest?fnId=step&step=step".to_string(),
+                method: "http".to_string(),
+            },
+            retries: FunctionStepRetry { attempts: 3 },
+        }],
     };
 
     let payload = App {
