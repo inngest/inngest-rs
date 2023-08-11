@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     routing::{get, put},
     Router,
@@ -22,7 +24,7 @@ struct App {
 struct Trigger {
     event: Option<String>,
     expression: Option<String>,
-    cron: Option<String>,
+    // cron: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -30,7 +32,7 @@ struct Function {
     id: String,
     name: String,
     triggers: Vec<Trigger>,
-    steps: Vec<FunctionStep>,
+    steps: HashMap<String, FunctionStep>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -69,23 +71,29 @@ async fn main() {
 
 async fn register() -> Result<(), String> {
     let client = reqwest::Client::new();
+    let mut steps = HashMap::new();
+    steps.insert(
+        "step".to_string(),
+        FunctionStep {
+            id: "step".to_string(),
+            name: "step".to_string(),
+            runtime: FunctionStepRuntime {
+                url: "http://127.0.0.1:3000/api/inngest?fnId=dummy-func&step=step".to_string(),
+                method: "http".to_string(),
+            },
+            retries: FunctionStepRetry { attempts: 3 },
+        },
+    );
+
     let func = Function {
         id: "dummy-func".to_string(),
         name: "Dummy func".to_string(),
         triggers: vec![Trigger {
             event: Some("test/event".to_string()),
             expression: None,
-            cron: None,
+            // cron: None,
         }],
-        steps: vec![FunctionStep {
-            id: "step".to_string(),
-            name: "step".to_string(),
-            runtime: FunctionStepRuntime {
-                url: "http://127.0.0.1:3000/api/inngest?fnId=step&step=step".to_string(),
-                method: "http".to_string(),
-            },
-            retries: FunctionStepRetry { attempts: 3 },
-        }],
+        steps,
     };
 
     let payload = App {
@@ -98,8 +106,10 @@ async fn register() -> Result<(), String> {
         functions: vec![func],
     };
 
+    println!("Payload: {:#?}", json!(payload));
+
     match client
-        .post("http://127.0.0.1:8288")
+        .post("http://127.0.0.1:8288/fn/register")
         .json(&payload)
         .send()
         .await
