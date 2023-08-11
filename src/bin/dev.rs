@@ -7,6 +7,8 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use inngest::router::axum as inngest_axum;
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 struct App {
     #[serde(rename = "appName")]
@@ -60,7 +62,7 @@ async fn main() {
     // build our application with a single route
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
-        .route("/api/inngest", put(register).post(invoke));
+        .route("/api/inngest", put(inngest_axum::register).post(invoke));
 
     // run it with hyper on localhost:3000
     axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
