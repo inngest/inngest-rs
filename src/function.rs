@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 // #[derive(Debug, Clone, Deserialize, Serialize)]
 pub trait ServableFunction {
-    fn slug() -> String;
-    fn name() -> String;
-    fn trigger() -> Box<dyn Trigger>;
+    fn slug(&self) -> String;
+    fn name(&self) -> String;
+    fn trigger(&self) -> Box<dyn Trigger>;
 }
 
 #[derive(Debug, Clone)]
@@ -18,6 +18,12 @@ pub struct Function {
     opts: FunctionOps,
     trigger: Box<dyn Trigger>,
     // TODO: the actual function
+}
+
+pub struct SdkFunction {
+    id: String,
+    name: String,
+    triggers: Vec<Box<dyn Trigger>>,
 }
 
 pub trait Trigger {

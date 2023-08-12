@@ -1,15 +1,8 @@
 pub mod axum;
 
-use serde::{Deserialize, Serialize};
+use crate::function::ServableFunction;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SdkRequest {
-    #[serde(rename = "appName")]
+pub struct Handler {
     app_name: String,
-    #[serde(rename = "deployType")]
-    deploy_type: String,
-    url: String,
-    v: String,
-    sdk: String,
-    framework: String,
+    funcs: Vec<Box<dyn ServableFunction>>,
 }
