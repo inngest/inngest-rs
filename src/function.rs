@@ -1,63 +1,55 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 // #[derive(Debug, Clone, Deserialize, Serialize)]
 pub trait ServableFunction {
     fn slug(&self) -> String;
     fn name(&self) -> String;
-    fn trigger(&self) -> Box<dyn Trigger>;
+    fn trigger(&self) -> Trigger;
 }
 
-#[derive(Debug, Clone)]
-pub struct FunctionOps {
-    id: String,
-    name: String,
-    retries: u8,
-}
-
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Function {
-    opts: FunctionOps,
-    trigger: Box<dyn Trigger>,
-    // TODO: the actual function
-}
-
-pub struct SdkFunction {
     id: String,
     name: String,
-    triggers: Vec<Box<dyn Trigger>>,
+    triggers: Vec<Trigger>,
+    steps: HashMap<String, Step>,
 }
 
-pub trait Trigger {
-    fn trigger(&self) -> String;
-    fn expression(&self) -> Option<String>;
+#[derive(Debug, Deserialize, Serialize)]
+pub struct Step {
+    id: String,
+    name: String,
+    runtime: StepRuntime,
+    retries: StepRetry,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StepRuntime {
+    url: String,
+    #[serde(rename = "type")]
+    method: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StepRetry {
+    attempts: u8,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum Trigger {
+    Event(EventTrigger),
+    Cron(CronTrigger),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct EventTrigger {
     event: String,
     expression: Option<String>,
 }
 
-impl Trigger for EventTrigger {
-    fn trigger(&self) -> String {
-        self.event.clone()
-    }
-
-    fn expression(&self) -> Option<String> {
-        self.expression.clone()
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CronTrigger {
     cron: String,
-}
-
-impl Trigger for CronTrigger {
-    fn trigger(&self) -> String {
-        self.cron.clone()
-    }
-
-    fn expression(&self) -> Option<String> {
-        None
-    }
 }

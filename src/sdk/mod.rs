@@ -1,6 +1,8 @@
+use crate::function::Function;
+
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Request {
     #[serde(rename = "appName")]
     app_name: String,
@@ -10,4 +12,5 @@ pub struct Request {
     v: String,
     sdk: String,
     framework: String,
+    functions: Vec<Function>,
 }
