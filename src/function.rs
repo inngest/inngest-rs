@@ -1,12 +1,49 @@
-use std::collections::HashMap;
+use std::{any::Any, collections::HashMap};
 
 use serde::{Deserialize, Serialize};
+use slug::slugify;
 
-// #[derive(Debug, Clone, Deserialize, Serialize)]
-pub trait ServableFunction {
-    fn slug(&self) -> String;
-    fn name(&self) -> String;
-    fn trigger(&self) -> Trigger;
+#[derive(Deserialize)]
+pub struct Input<T> {
+    event: T,
+    events: Vec<T>,
+    ctx: InputCtx,
+}
+
+#[derive(Deserialize)]
+pub struct InputCtx {
+    fn_id: String,
+    run_id: String,
+    step_id: String,
+}
+
+type SdkFunction<T> = fn(Input<T>) -> Result<dyn Any, String>;
+
+#[derive(Debug, Clone)]
+pub struct FunctionOps {
+    id: Option<String>,
+    name: String,
+    retries: u8,
+}
+
+#[derive(Debug, Clone)]
+pub struct ServableFunction<T> {
+    opts: FunctionOps,
+    trigger: Trigger,
+    func: SdkFunction<T>,
+}
+
+impl<T> ServableFunction<T> {
+    pub fn slug(&self) -> String {
+        match &self.opts.id {
+            Some(id) => id.clone(),
+            None => slugify(self.name()),
+        }
+    }
+
+    pub fn name(&self) -> String {
+        self.opts.name.clone()
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -37,19 +74,31 @@ pub struct StepRetry {
     attempts: u8,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum Trigger {
     Event(EventTrigger),
     Cron(CronTrigger),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EventTrigger {
     event: String,
     expression: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CronTrigger {
     cron: String,
+}
+
+pub fn create_function<T>(
+    opts: FunctionOps,
+    trigger: Trigger,
+    func: dyn Any,
+) -> ServableFunction<T> {
+    ServableFunction {
+        opts,
+        trigger,
+        func,
+    }
 }
