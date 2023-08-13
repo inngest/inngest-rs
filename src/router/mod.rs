@@ -3,12 +3,12 @@ pub mod axum;
 use crate::function::ServableFunction;
 use std::default::Default;
 
-pub struct Handler<T> {
+pub struct Handler {
     app_name: String,
-    funcs: Vec<ServableFunction<T>>,
+    funcs: Vec<ServableFunction>,
 }
 
-impl<T> Handler<T> {
+impl Handler {
     pub fn new() -> Self {
         Self::default()
     }
@@ -17,16 +17,16 @@ impl<T> Handler<T> {
         self.app_name = name.to_string()
     }
 
-    pub fn register_fn(&mut self, func: &ServableFunction<T>) {
+    pub fn register_fn(&mut self, func: &ServableFunction) {
         self.funcs.push(func.clone());
     }
 
-    pub fn register_fns(&mut self, funcs: &[ServableFunction<T>]) {
+    pub fn register_fns(&mut self, funcs: &[ServableFunction]) {
         self.funcs.extend_from_slice(funcs)
     }
 }
 
-impl<T> Default for Handler<T> {
+impl Default for Handler {
     fn default() -> Self {
         Handler {
             app_name: String::new(),

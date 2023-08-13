@@ -27,13 +27,13 @@ pub struct FunctionOps {
 }
 
 #[derive(Debug, Clone)]
-pub struct ServableFunction<T> {
+pub struct ServableFunction {
     opts: FunctionOps,
     trigger: Trigger,
-    func: SdkFunction<T>,
+    // func: SdkFunction,
 }
 
-impl<T> ServableFunction<T> {
+impl ServableFunction {
     pub fn slug(&self) -> String {
         match &self.opts.id {
             Some(id) => id.clone(),
@@ -91,14 +91,6 @@ pub struct CronTrigger {
     cron: String,
 }
 
-pub fn create_function<T>(
-    opts: FunctionOps,
-    trigger: Trigger,
-    func: dyn Any,
-) -> ServableFunction<T> {
-    ServableFunction {
-        opts,
-        trigger,
-        func,
-    }
+pub fn create_function<T>(opts: FunctionOps, trigger: Trigger) -> ServableFunction {
+    ServableFunction { opts, trigger }
 }
