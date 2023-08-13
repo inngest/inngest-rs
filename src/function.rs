@@ -48,47 +48,42 @@ impl ServableFunction {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Function {
-    id: String,
-    name: String,
-    triggers: Vec<Trigger>,
-    steps: HashMap<String, Step>,
+    pub id: String,
+    pub name: String,
+    pub triggers: Vec<Trigger>,
+    pub steps: HashMap<String, Step>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Step {
-    id: String,
-    name: String,
-    runtime: StepRuntime,
-    retries: StepRetry,
+    pub id: String,
+    pub name: String,
+    pub runtime: StepRuntime,
+    pub retries: StepRetry,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StepRuntime {
-    url: String,
+    pub url: String,
     #[serde(rename = "type")]
-    method: String,
+    pub method: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StepRetry {
-    attempts: u8,
+    pub attempts: u8,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
 pub enum Trigger {
-    Event(EventTrigger),
-    Cron(CronTrigger),
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct EventTrigger {
-    event: String,
-    expression: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CronTrigger {
-    cron: String,
+    EventTrigger {
+        event: String,
+        expression: Option<String>,
+    },
+    CronTrigger {
+        cron: String,
+    },
 }
 
 pub fn create_function<T>(opts: FunctionOps, trigger: Trigger) -> ServableFunction {
