@@ -18,12 +18,14 @@ pub struct Request {
 
 impl Default for Request {
     fn default() -> Self {
+        let version = env!("CARGO_PKG_VERSION");
+
         Request {
             app_name: "InngestApp".to_string(),
             deploy_type: "ping".to_string(),
             url: "".to_string(),
             v: "1".to_string(),
-            sdk: "rust:v0.0.1".to_string(),
+            sdk: format!("rust:v{}", version),
             framework: "rust".to_string(),
             functions: vec![],
         }
