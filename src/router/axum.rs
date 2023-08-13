@@ -3,7 +3,6 @@ use crate::{
     sdk::Request,
 };
 
-use serde_json::json;
 use std::{collections::HashMap, default::Default};
 
 pub async fn register() -> Result<(), String> {
@@ -37,8 +36,6 @@ pub async fn register() -> Result<(), String> {
         url: "http://127.0.0.1:3000/api/inngest".to_string(),
         ..Default::default()
     };
-
-    println!("Payload: {:#?}", json!(&req));
 
     let client = reqwest::Client::new();
 
