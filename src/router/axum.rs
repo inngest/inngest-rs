@@ -1,38 +1,45 @@
+use axum::extract::State;
+
 use crate::{
-    function::{Function, Step, StepRetry, StepRuntime, Trigger},
+    function::{Function, Step, StepRetry, StepRuntime},
+    router::Handler,
     sdk::Request,
 };
 
-use std::{collections::HashMap, default::Default};
+use std::{collections::HashMap, default::Default, sync::Arc};
 
-pub async fn register() -> Result<(), String> {
-    let mut steps = HashMap::new();
-    steps.insert(
-        "step".to_string(),
-        Step {
-            id: "step".to_string(),
-            name: "step".to_string(),
-            runtime: StepRuntime {
-                url: "http://127.0.0.1:3000/api/inngest?fnId=dummy-func&step=step".to_string(),
-                method: "http".to_string(),
-            },
-            retries: StepRetry { attempts: 3 },
-        },
-    );
+pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String> {
+    let funcs: Vec<Function> = handler
+        .funcs
+        .iter()
+        .map(|f| {
+            let mut steps = HashMap::new();
+            steps.insert(
+                "step".to_string(),
+                Step {
+                    id: "step".to_string(),
+                    name: "step".to_string(),
+                    runtime: StepRuntime {
+                        url: "http://127.0.0.1:3000/api/inngest?fnId=dummy-func&step=step"
+                            .to_string(),
+                        method: "http".to_string(),
+                    },
+                    retries: StepRetry { attempts: 3 },
+                },
+            );
 
-    let func = Function {
-        id: "dummy-func".to_string(),
-        name: "Dummy func".to_string(),
-        triggers: vec![Trigger::EventTrigger {
-            event: "test/event".to_string(),
-            expression: None,
-        }],
-        steps,
-    };
+            Function {
+                id: f.slug(),
+                name: f.name(),
+                triggers: vec![f.trigger()],
+                steps,
+            }
+        })
+        .collect();
 
     let req = Request {
         framework: "axum".to_string(),
-        functions: vec![func],
+        functions: funcs,
         url: "http://127.0.0.1:3000/api/inngest".to_string(),
         ..Default::default()
     };

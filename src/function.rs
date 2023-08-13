@@ -1,48 +1,78 @@
-use std::{any::Any, collections::HashMap};
+use std::{any::Any, collections::HashMap, fmt::Debug};
 
 use serde::{Deserialize, Serialize};
 use slug::slugify;
 
+pub trait ServableFunction {
+    fn slug(&self) -> String;
+    fn name(&self) -> String;
+    fn trigger(&self) -> Trigger;
+}
+
+impl Debug for dyn ServableFunction + Send + Sync {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServableFn")
+            .field("name", &self.name())
+            .field("slug", &self.slug())
+            .field("trigger", &self.trigger())
+            .finish()
+    }
+}
+
 #[derive(Deserialize)]
 pub struct Input<T> {
-    event: T,
-    events: Vec<T>,
-    ctx: InputCtx,
+    pub event: T,
+    pub events: Vec<T>,
+    pub ctx: InputCtx,
 }
 
 #[derive(Deserialize)]
 pub struct InputCtx {
-    fn_id: String,
-    run_id: String,
-    step_id: String,
+    pub fn_id: String,
+    pub run_id: String,
+    pub step_id: String,
 }
 
-type SdkFunction<T> = fn(Input<T>) -> Result<dyn Any, String>;
+type SdkFunction<T> = fn(Input<T>) -> Result<Box<dyn Any>, String>;
 
 #[derive(Debug, Clone)]
 pub struct FunctionOps {
-    id: Option<String>,
-    name: String,
-    retries: u8,
+    pub id: Option<String>,
+    pub name: String,
+    pub retries: u8,
+}
+
+impl Default for FunctionOps {
+    fn default() -> Self {
+        FunctionOps {
+            id: None,
+            name: String::new(),
+            retries: 3,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
-pub struct ServableFunction {
-    opts: FunctionOps,
-    trigger: Trigger,
-    // func: SdkFunction,
+pub struct ServableFn<T> {
+    pub opts: FunctionOps,
+    pub trigger: Trigger,
+    pub func: SdkFunction<T>,
 }
 
-impl ServableFunction {
-    pub fn slug(&self) -> String {
+impl<T> ServableFunction for ServableFn<T> {
+    fn slug(&self) -> String {
         match &self.opts.id {
             Some(id) => id.clone(),
             None => slugify(self.name()),
         }
     }
 
-    pub fn name(&self) -> String {
+    fn name(&self) -> String {
         self.opts.name.clone()
+    }
+
+    fn trigger(&self) -> Trigger {
+        self.trigger.clone()
     }
 }
 
@@ -86,6 +116,14 @@ pub enum Trigger {
     },
 }
 
-pub fn create_function<T>(opts: FunctionOps, trigger: Trigger) -> ServableFunction {
-    ServableFunction { opts, trigger }
+pub fn create_function<T>(
+    opts: FunctionOps,
+    trigger: Trigger,
+    func: SdkFunction<T>,
+) -> impl ServableFunction {
+    ServableFn {
+        opts,
+        trigger,
+        func,
+    }
 }
