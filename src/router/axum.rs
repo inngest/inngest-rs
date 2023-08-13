@@ -56,3 +56,7 @@ pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String>
         Err(_) => Err("error".to_string()),
     }
 }
+
+pub async fn invoke(State(handler): State<Arc<Handler>>) -> Result<(), String> {
+    Ok(())
+}
