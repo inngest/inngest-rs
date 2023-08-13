@@ -1,4 +1,5 @@
-use axum::extract::State;
+use axum::extract::{Query, State};
+use serde::Deserialize;
 
 use crate::{
     function::{Function, Step, StepRetry, StepRuntime},
@@ -20,8 +21,10 @@ pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String>
                     id: "step".to_string(),
                     name: "step".to_string(),
                     runtime: StepRuntime {
-                        url: "http://127.0.0.1:3000/api/inngest?fnId=dummy-func&step=step"
-                            .to_string(),
+                        url: format!(
+                            "http://127.0.0.1:3000/api/inngest?fnId={}&step=step",
+                            f.slug()
+                        ),
                         method: "http".to_string(),
                     },
                     retries: StepRetry { attempts: 3 },
@@ -57,6 +60,26 @@ pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String>
     }
 }
 
-pub async fn invoke(State(handler): State<Arc<Handler>>) -> Result<(), String> {
-    Ok(())
+#[derive(Debug, Deserialize)]
+pub struct InvokeQuery {
+    #[serde(rename = "fnId")]
+    fn_id: String,
+    step: String,
+}
+
+pub async fn invoke(
+    State(handler): State<Arc<Handler>>,
+    Query(query): Query<InvokeQuery>,
+) -> Result<(), String> {
+    println!("Handker: {:?}", handler);
+    println!("Query: {:?}", query);
+
+    match handler.funcs.iter().find(|f| f.slug() == query.fn_id) {
+        None => Err(format!("no function registered as ID: {}", query.fn_id)),
+        Some(func) => {
+            // println!("Func: {:?}", func.func());
+
+            Ok(())
+        }
+    }
 }
