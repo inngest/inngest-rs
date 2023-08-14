@@ -7,6 +7,7 @@ pub trait ServableFunction {
     fn slug(&self) -> String;
     fn name(&self) -> String;
     fn trigger(&self) -> Trigger;
+    // fn func(&self) -> SdkFunction<T>;
 }
 
 impl Debug for dyn ServableFunction + Send + Sync {
@@ -74,6 +75,10 @@ impl<T> ServableFunction for ServableFn<T> {
     fn trigger(&self) -> Trigger {
         self.trigger.clone()
     }
+
+    // fn func(&self) -> SdkFunction<T> {
+    //     self.func.clone()
+    // }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
