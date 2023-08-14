@@ -1,18 +1,16 @@
 use axum::{
-    body::Body as AxumBody,
     extract::{Host, MatchedPath, Query, State},
-    http::Request as AxumRequest,
+    Json,
 };
 use serde::Deserialize;
 
 use crate::{
-    event::Event,
     function::{Function, Step, StepRetry, StepRuntime},
     router::Handler,
     sdk::Request,
 };
 
-use std::{any::Any, collections::HashMap, default::Default, sync::Arc};
+use std::{collections::HashMap, default::Default, sync::Arc};
 
 pub async fn register(
     Host(host): Host,
@@ -78,38 +76,14 @@ pub struct InvokeQuery {
     step: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct InvokeCtxStack {
-    pub current: u8,
-    pub stack: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct InvokeCtx {
-    pub attempt: u8,
-    pub env: String,
-    pub fn_id: String,
-    pub run_id: String,
-    pub step_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct InvokeBody {
-    pub ctx: InvokeCtx,
-    pub event: Box<Event<_, _>>,
-    pub events: Option<Vec<Box<Event<_, _>>>>,
-    pub steps: Option<HashMap<String, Box<dyn Any>>>,
-    pub use_api: bool,
-}
-
 pub async fn invoke(
-    request: AxumRequest<AxumBody>,
-    State(handler): State<Arc<Handler>>,
     Query(query): Query<InvokeQuery>,
+    State(handler): State<Arc<Handler>>,
+    Json(body): Json<serde_json::Value>,
 ) -> Result<(), String> {
-    println!("Request: {:#?}", request);
     println!("Handker: {:#?}", handler);
     println!("Query: {:#?}", query);
+    println!("Body: {:#?}", body);
 
     match handler.funcs.iter().find(|f| f.slug() == query.fn_id) {
         None => Err(format!("no function registered as ID: {}", query.fn_id)),
