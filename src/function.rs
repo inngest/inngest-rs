@@ -4,13 +4,15 @@ use serde::{Deserialize, Serialize};
 use slug::slugify;
 
 pub trait ServableFunction {
+    type T;
+
     fn slug(&self) -> String;
     fn name(&self) -> String;
     fn trigger(&self) -> Trigger;
-    // fn func(&self) -> SdkFunction<T>;
+    fn exec(&self, input: Input<Self::T>) -> Result<Box<dyn Any>, String>;
 }
 
-impl Debug for dyn ServableFunction + Send + Sync {
+impl Debug for dyn ServableFunction<T = ()> + Send + Sync {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServableFn")
             .field("name", &self.name())
@@ -31,10 +33,8 @@ pub struct Input<T> {
 pub struct InputCtx {
     pub fn_id: String,
     pub run_id: String,
-    pub step_id: String,
+    // pub step_id: String,
 }
-
-type SdkFunction<T> = fn(Input<T>) -> Result<Box<dyn Any>, String>;
 
 #[derive(Debug, Clone)]
 pub struct FunctionOps {
@@ -53,14 +53,22 @@ impl Default for FunctionOps {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ServableFn<T> {
+// #[derive(Debug, Clone)]
+pub struct ServableFn<F, T>
+where
+    F: Fn(Input<T>) -> Result<Box<dyn Any>, String>,
+    T: Serialize,
+{
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: SdkFunction<T>,
+    pub func: F,
 }
 
-impl<T> ServableFunction for ServableFn<T> {
+impl<F, T> ServableFunction for ServableFn<F, T>
+where
+    F: Fn(Input<T>) -> Result<Box<dyn Any>, String>,
+    T: Serialize,
+{
     fn slug(&self) -> String {
         match &self.opts.id {
             Some(id) => id.clone(),
@@ -76,9 +84,9 @@ impl<T> ServableFunction for ServableFn<T> {
         self.trigger.clone()
     }
 
-    // fn func(&self) -> SdkFunction<T> {
-    //     self.func.clone()
-    // }
+    fn exec(&self, input: Input<T>) -> Result<Box<dyn Any>, String> {
+        self.func(input)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -121,11 +129,7 @@ pub enum Trigger {
     },
 }
 
-pub fn create_function<T>(
-    opts: FunctionOps,
-    trigger: Trigger,
-    func: SdkFunction<T>,
-) -> impl ServableFunction {
+pub fn create_function<F>(opts: FunctionOps, trigger: Trigger, func: F) -> impl ServableFunction {
     ServableFn {
         opts,
         trigger,
