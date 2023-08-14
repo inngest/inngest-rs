@@ -1,7 +1,7 @@
 use inngest::event::{send_event, send_events, Event};
 use serde::Serialize;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 struct Data {
     foo: u8,
     bar: u8,
@@ -10,21 +10,17 @@ struct Data {
 #[tokio::main]
 async fn main() {
     let evt: Event<Data, ()> = Event {
-        id: None,
         name: "test/event".to_string(),
         data: Data { foo: 1, bar: 2 },
-        user: None,
-        ts: 0,
+        ..Default::default()
     };
 
     let evts: Vec<Event<Data, ()>> = vec![
         evt.clone(),
         Event {
-            id: None,
             name: "test/yolo".to_string(),
             data: Data { foo: 10, bar: 20 },
-            user: None,
-            ts: 0,
+            ..Default::default()
         },
     ];
 

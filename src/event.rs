@@ -1,12 +1,24 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Event<D, U> {
+pub struct Event<T, U> {
     pub id: Option<String>,
     pub name: String,
-    pub data: D,
+    pub data: T,
     pub user: Option<U>,
     pub ts: u32,
+}
+
+impl<T: Default, U> Default for Event<T, U> {
+    fn default() -> Self {
+        Event {
+            id: None,
+            name: String::new(),
+            data: T::default(),
+            user: None,
+            ts: 0,
+        }
+    }
 }
 
 pub async fn send_event<D: Serialize, U: Serialize>(event: &Event<D, U>) -> Result<(), String> {
