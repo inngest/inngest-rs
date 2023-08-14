@@ -1,6 +1,6 @@
 use axum::{
     body::Body as AxumBody,
-    extract::{Query, State},
+    extract::{Host, MatchedPath, Query, State},
     http::Request as AxumRequest,
 };
 use serde::Deserialize;
@@ -14,7 +14,11 @@ use crate::{
 
 use std::{any::Any, collections::HashMap, default::Default, sync::Arc};
 
-pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String> {
+pub async fn register(
+    Host(host): Host,
+    path: MatchedPath,
+    State(handler): State<Arc<Handler>>,
+) -> Result<(), String> {
     let funcs: Vec<Function> = handler
         .funcs
         .iter()
@@ -27,7 +31,9 @@ pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String>
                     name: "step".to_string(),
                     runtime: StepRuntime {
                         url: format!(
-                            "http://127.0.0.1:3000/api/inngest?fnId={}&step=step",
+                            "http://{}{}?fnId={}&step=step",
+                            host,
+                            path.as_str(),
                             f.slug()
                         ),
                         method: "http".to_string(),
@@ -48,7 +54,7 @@ pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String>
     let req = Request {
         framework: "axum".to_string(),
         functions: funcs,
-        url: "http://127.0.0.1:3000/api/inngest".to_string(),
+        url: format!("http://{}{}", host, path.as_str()),
         ..Default::default()
     };
 
