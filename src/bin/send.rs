@@ -28,7 +28,7 @@ async fn main() {
         },
     ];
 
-    match send_event(evt).await {
+    match send_event(&evt).await {
         Ok(_) => println!("Success"),
         Err(_) => println!("Error"),
     }

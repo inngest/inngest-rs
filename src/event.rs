@@ -9,7 +9,7 @@ pub struct Event<D, U> {
     pub ts: u32,
 }
 
-pub async fn send_event<D: Serialize, U: Serialize>(event: Event<D, U>) -> Result<(), String> {
+pub async fn send_event<D: Serialize, U: Serialize>(event: &Event<D, U>) -> Result<(), String> {
     let client = reqwest::Client::new();
 
     // TODO: make the result return something properly
