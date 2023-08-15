@@ -79,14 +79,15 @@ impl ServableFunction for ServableFn {
     }
 }
 
-pub fn create_function<D, U>(
+pub fn create_function<D, U, R>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: impl Fn(Input<D, U>) -> Result<Box<dyn Any>, String> + Send + Sync + 'static,
+    func: impl Fn(Input<D, U>) -> Result<R, String> + Send + Sync + 'static,
 ) -> impl ServableFunction
 where
-    D: Serialize,
-    U: Serialize,
+    D: Serialize + Default,
+    U: Serialize + Default,
+    R: Serialize,
 {
     ServableFn {
         opts,
