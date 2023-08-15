@@ -81,7 +81,7 @@ pub async fn invoke(
     State(handler): State<Arc<Handler>>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<(), String> {
-    // println!("Body: {:#?}", body);
+    println!("Body: {:#?}", body);
 
     match handler.funcs.iter().find(|f| f.slug() == query.fn_id) {
         None => Err(format!("no function registered as ID: {}", query.fn_id)),
