@@ -1,4 +1,4 @@
-use std::{any::Any, collections::HashMap, fmt::Debug};
+use std::{any::Any, collections::HashMap, fmt::Debug, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use slug::slugify;
@@ -54,6 +54,7 @@ impl Default for FunctionOps {
 pub struct ServableFn {
     pub opts: FunctionOps,
     pub trigger: Trigger,
+    pub func: Arc<dyn Any + Send + Sync>,
 }
 
 impl ServableFunction for ServableFn {
@@ -76,9 +77,13 @@ impl ServableFunction for ServableFn {
 pub fn create_function<T>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: impl Fn(Input<T>) -> Result<Box<dyn Any>, String>,
+    func: impl Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync + 'static,
 ) -> impl ServableFunction {
-    ServableFn { opts, trigger }
+    ServableFn {
+        opts,
+        trigger,
+        func: Arc::new(func),
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
