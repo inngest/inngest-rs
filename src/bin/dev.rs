@@ -6,9 +6,11 @@ use axum::{
 };
 
 use inngest::{
+    event::Event,
     function::{create_function, FunctionOps, Input, ServableFunction, Trigger},
     router::{axum as inngest_axum, Handler},
 };
+use serde::{Deserialize, Serialize};
 
 #[tokio::main]
 async fn main() {
@@ -32,7 +34,11 @@ async fn main() {
         .unwrap();
 }
 
-struct DummyEvent {}
+#[derive(Serialize, Deserialize, Default)]
+pub struct DummyData {
+    pub yo: u8,
+    pub lo: u8,
+}
 
 fn dummy_fn() -> impl ServableFunction {
     create_function(
@@ -44,7 +50,7 @@ fn dummy_fn() -> impl ServableFunction {
             event: "test/event".to_string(),
             expression: None,
         },
-        |_input: Input<DummyEvent>| {
+        |_input: Input<Event<DummyData, ()>>| {
             println!("In dummy function");
 
             Ok(Box::new(()))
