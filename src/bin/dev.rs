@@ -50,7 +50,7 @@ fn dummy_fn() -> impl ServableFunction {
             event: "test/event".to_string(),
             expression: None,
         },
-        |_input: Input<Event<DummyData, ()>>| {
+        |_input: Input<DummyData, ()>| {
             println!("In dummy function");
 
             Ok(Box::new(()))

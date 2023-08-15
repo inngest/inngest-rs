@@ -1,7 +1,8 @@
-use std::{any::Any, collections::HashMap, fmt::Debug, sync::Arc};
+use crate::event::Event;
 
 use serde::{Deserialize, Serialize};
 use slug::slugify;
+use std::{any::Any, collections::HashMap, fmt::Debug, sync::Arc};
 
 pub trait ServableFunction {
     fn slug(&self) -> String;
@@ -20,9 +21,13 @@ impl Debug for dyn ServableFunction + Send + Sync {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct Input<T> {
-    pub event: T,
-    pub events: Vec<T>,
+pub struct Input<D, U>
+where
+    D: Serialize,
+    U: Serialize,
+{
+    pub event: Event<D, U>,
+    pub events: Vec<Event<D, U>>,
     pub ctx: InputCtx,
 }
 
@@ -74,11 +79,15 @@ impl ServableFunction for ServableFn {
     }
 }
 
-pub fn create_function<T: Serialize>(
+pub fn create_function<D, U>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: impl Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync + 'static,
-) -> impl ServableFunction {
+    func: impl Fn(Input<D, U>) -> Result<Box<dyn Any>, String> + Send + Sync + 'static,
+) -> impl ServableFunction
+where
+    D: Serialize,
+    U: Serialize,
+{
     ServableFn {
         opts,
         trigger,
