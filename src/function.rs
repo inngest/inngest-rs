@@ -4,15 +4,12 @@ use serde::{Deserialize, Serialize};
 use slug::slugify;
 
 pub trait ServableFunction {
-    type T;
-
     fn slug(&self) -> String;
     fn name(&self) -> String;
     fn trigger(&self) -> Trigger;
-    fn exec(&self, input: Input<Self::T>) -> Result<Box<dyn Any>, String>;
 }
 
-impl Debug for dyn ServableFunction<T = ()> + Send + Sync {
+impl Debug for dyn ServableFunction + Send + Sync {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServableFn")
             .field("name", &self.name())
@@ -22,14 +19,14 @@ impl Debug for dyn ServableFunction<T = ()> + Send + Sync {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct Input<T> {
     pub event: T,
     pub events: Vec<T>,
     pub ctx: InputCtx,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 pub struct InputCtx {
     pub fn_id: String,
     pub run_id: String,
@@ -54,21 +51,12 @@ impl Default for FunctionOps {
 }
 
 // #[derive(Debug, Clone)]
-pub struct ServableFn<F, T>
-where
-    F: Fn(Input<T>) -> Result<Box<dyn Any>, String>,
-    T: Serialize,
-{
+pub struct ServableFn {
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: F,
 }
 
-impl<F, T> ServableFunction for ServableFn<F, T>
-where
-    F: Fn(Input<T>) -> Result<Box<dyn Any>, String>,
-    T: Serialize,
-{
+impl ServableFunction for ServableFn {
     fn slug(&self) -> String {
         match &self.opts.id {
             Some(id) => id.clone(),
@@ -83,10 +71,14 @@ where
     fn trigger(&self) -> Trigger {
         self.trigger.clone()
     }
+}
 
-    fn exec(&self, input: Input<T>) -> Result<Box<dyn Any>, String> {
-        self.func(input)
-    }
+pub fn create_function<T>(
+    opts: FunctionOps,
+    trigger: Trigger,
+    func: impl Fn(Input<T>) -> Result<Box<dyn Any>, String>,
+) -> impl ServableFunction {
+    ServableFn { opts, trigger }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -127,12 +119,4 @@ pub enum Trigger {
     CronTrigger {
         cron: String,
     },
-}
-
-pub fn create_function<F>(opts: FunctionOps, trigger: Trigger, func: F) -> impl ServableFunction {
-    ServableFn {
-        opts,
-        trigger,
-        func,
-    }
 }
