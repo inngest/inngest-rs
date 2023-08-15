@@ -6,7 +6,7 @@ pub struct Event<T, U> {
     pub name: String,
     pub data: T,
     pub user: Option<U>,
-    pub ts: u32,
+    pub ts: i64,
 }
 
 impl<T: Default, U> Default for Event<T, U> {
