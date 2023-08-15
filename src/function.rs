@@ -50,7 +50,7 @@ impl Default for FunctionOps {
     }
 }
 
-// #[derive(Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct ServableFn {
     pub opts: FunctionOps,
     pub trigger: Trigger,
