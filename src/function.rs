@@ -74,7 +74,7 @@ impl ServableFunction for ServableFn {
     }
 }
 
-pub fn create_function<T>(
+pub fn create_function<T: Serialize>(
     opts: FunctionOps,
     trigger: Trigger,
     func: impl Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync + 'static,
