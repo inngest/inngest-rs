@@ -1,6 +1,6 @@
 use crate::{
     function::{Function, ServableFunction, Step, StepRetry, StepRuntime},
-    router::{Handler, InvokeQuery},
+    router::{Handler, InvokeBody, InvokeQuery},
     sdk::Request,
 };
 use axum::{
@@ -81,7 +81,16 @@ pub async fn invoke<F: ServableFunction>(
             println!("Slug: {}", func.slug());
             println!("Trigger: {:?}", func.trigger());
 
-            Ok(())
+            match serde_json::from_value::<InvokeBody>(body) {
+                Ok(body) => {
+                    println!("{:#?}", body);
+                    Ok(())
+                }
+                Err(err) => {
+                    println!("Error: {:?}", err);
+                    Ok(())
+                }
+            }
         }
     }
 }

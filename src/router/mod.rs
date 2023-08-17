@@ -44,27 +44,27 @@ pub struct InvokeQuery {
     // step: String,
 }
 
-#[derive(Deserialize)]
-pub struct InvokeBody<T> {
-    ctx: InvokeBodyCtx,
-    event: T,
-    events: Vec<T>,
+#[derive(Debug, Deserialize)]
+pub struct InvokeBody {
+    pub ctx: InvokeBodyCtx,
+    // pub event: T,
+    // pub events: Vec<T>,
     steps: HashMap<String, Value>,
-    use_api: bool,
+    pub use_api: bool,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct InvokeBodyCtx {
-    attempt: u8,
-    env: String,
-    fn_id: String,
-    run_id: String,
-    stack: InvokeBodyCtxStack,
-    step_id: String,
+    pub attempt: u8,
+    pub env: String,
+    pub fn_id: String,
+    pub run_id: String,
+    pub stack: InvokeBodyCtxStack,
+    pub step_id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct InvokeBodyCtxStack {
-    current: u16,
-    stack: Vec<String>,
+    pub current: u16,
+    pub stack: Vec<String>,
 }

@@ -4,7 +4,7 @@ use inngest::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct DummyData {
     pub yo: u8,
     pub lo: u8,

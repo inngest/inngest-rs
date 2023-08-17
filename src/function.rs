@@ -3,15 +3,16 @@ use slug::slugify;
 use std::{any::Any, collections::HashMap, fmt::Debug, sync::Arc};
 
 pub trait ServableFunction {
-    type T: Serialize;
+    type T: Serialize + for<'a> Deserialize<'a> + Clone + Debug;
 
     fn slug(&self) -> String;
     fn name(&self) -> String;
     fn trigger(&self) -> Trigger;
+    fn event(&self) -> Self::T;
     fn invoke(&self, input: Input<Self::T>) -> Result<Box<dyn Any>, String>;
 }
 
-impl Debug for dyn ServableFunction<T = ()> + Send + Sync {
+impl<'a> Debug for dyn ServableFunction<T = ()> + Send + Sync {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServableFn")
             .field("name", &self.name())
@@ -53,14 +54,14 @@ impl Default for FunctionOps {
 }
 
 #[derive(Clone)]
-pub struct ServableFn<T: Serialize> {
+pub struct ServableFn<T: Serialize + for<'a> Deserialize<'a> + Clone + Debug> {
     pub opts: FunctionOps,
     pub trigger: Trigger,
     pub event: T,
     pub func: Arc<dyn Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync>,
 }
 
-impl<T: Serialize> ServableFunction for ServableFn<T> {
+impl<T: Serialize + Clone + for<'a> Deserialize<'a> + Debug> ServableFunction for ServableFn<T> {
     type T = T;
 
     fn slug(&self) -> String {
@@ -78,12 +79,16 @@ impl<T: Serialize> ServableFunction for ServableFn<T> {
         self.trigger.clone()
     }
 
+    fn event(&self) -> Self::T {
+        self.event.clone()
+    }
+
     fn invoke(&self, input: Input<Self::T>) -> Result<Box<dyn Any>, String> {
         (self.func)(input)
     }
 }
 
-pub fn create_function<T: Serialize + Default>(
+pub fn create_function<T: Serialize + Default + Clone + for<'a> Deserialize<'a> + Debug>(
     opts: FunctionOps,
     trigger: Trigger,
     func: impl Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync + 'static,
