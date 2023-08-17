@@ -1,20 +1,19 @@
 use crate::{
-    function::{Function, Step, StepRetry, StepRuntime},
-    router::{Handler, InvokeBody, InvokeQuery},
+    function::{Function, ServableFunction, Step, StepRetry, StepRuntime},
+    router::{Handler, InvokeQuery},
     sdk::Request,
 };
 use axum::{
     extract::{Host, MatchedPath, Query, State},
     Json,
 };
-
 use serde_json::Value;
 use std::{collections::HashMap, default::Default, sync::Arc};
 
-pub async fn register(
+pub async fn register<F: ServableFunction>(
     Host(host): Host,
     path: MatchedPath,
-    State(handler): State<Arc<Handler>>,
+    State(handler): State<Arc<Handler<F>>>,
 ) -> Result<(), String> {
     let funcs: Vec<Function> = handler
         .funcs
@@ -68,9 +67,9 @@ pub async fn register(
     }
 }
 
-pub async fn invoke(
+pub async fn invoke<F: ServableFunction>(
     Query(query): Query<InvokeQuery>,
-    State(handler): State<Arc<Handler>>,
+    State(handler): State<Arc<Handler<F>>>,
     Json(body): Json<Value>,
 ) -> Result<(), String> {
     println!("Body: {:#?}", body);
@@ -78,7 +77,9 @@ pub async fn invoke(
     match handler.funcs.iter().find(|f| f.slug() == query.fn_id) {
         None => Err(format!("no function registered as ID: {}", query.fn_id)),
         Some(func) => {
-            println!("Func: {:?}", func);
+            println!("Name: {}", func.name());
+            println!("Slug: {}", func.slug());
+            println!("Trigger: {:?}", func.trigger());
 
             Ok(())
         }

@@ -3,12 +3,15 @@ use slug::slugify;
 use std::{any::Any, collections::HashMap, fmt::Debug, sync::Arc};
 
 pub trait ServableFunction {
+    type T: Serialize;
+
     fn slug(&self) -> String;
     fn name(&self) -> String;
     fn trigger(&self) -> Trigger;
+    fn invoke(&self, input: Input<Self::T>) -> Result<Box<dyn Any>, String>;
 }
 
-impl Debug for dyn ServableFunction + Send + Sync {
+impl Debug for dyn ServableFunction<T = ()> + Send + Sync {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServableFn")
             .field("name", &self.name())
@@ -58,6 +61,8 @@ pub struct ServableFn<T: Serialize> {
 }
 
 impl<T: Serialize> ServableFunction for ServableFn<T> {
+    type T = T;
+
     fn slug(&self) -> String {
         match &self.opts.id {
             Some(id) => id.clone(),
@@ -71,6 +76,10 @@ impl<T: Serialize> ServableFunction for ServableFn<T> {
 
     fn trigger(&self) -> Trigger {
         self.trigger.clone()
+    }
+
+    fn invoke(&self, input: Input<Self::T>) -> Result<Box<dyn Any>, String> {
+        (self.func)(input)
     }
 }
 
