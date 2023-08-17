@@ -1,7 +1,9 @@
 pub mod axum;
 
 use crate::function::ServableFunction;
-use std::default::Default;
+use serde::Deserialize;
+use serde_json::Value;
+use std::{collections::HashMap, default::Default};
 
 #[derive(Debug)]
 pub struct Handler {
@@ -34,4 +36,36 @@ impl Default for Handler {
             funcs: vec![],
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct InvokeQuery {
+    #[serde(rename = "fnId")]
+    fn_id: String,
+    // step: String,
+}
+
+#[derive(Deserialize)]
+pub struct InvokeBody<T> {
+    ctx: InvokeBodyCtx,
+    event: T,
+    events: Vec<T>,
+    steps: HashMap<String, Value>,
+    use_api: bool,
+}
+
+#[derive(Deserialize)]
+pub struct InvokeBodyCtx {
+    attempt: u8,
+    env: String,
+    fn_id: String,
+    run_id: String,
+    stack: InvokeBodyCtxStack,
+    step_id: String,
+}
+
+#[derive(Deserialize)]
+pub struct InvokeBodyCtxStack {
+    current: u16,
+    stack: Vec<String>,
 }

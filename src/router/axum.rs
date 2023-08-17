@@ -1,15 +1,14 @@
+use crate::{
+    function::{Function, Step, StepRetry, StepRuntime},
+    router::{Handler, InvokeBody, InvokeQuery},
+    sdk::Request,
+};
 use axum::{
     extract::{Host, MatchedPath, Query, State},
     Json,
 };
-use serde::Deserialize;
 
-use crate::{
-    function::{Function, Step, StepRetry, StepRuntime},
-    router::Handler,
-    sdk::Request,
-};
-
+use serde_json::Value;
 use std::{collections::HashMap, default::Default, sync::Arc};
 
 pub async fn register(
@@ -69,17 +68,10 @@ pub async fn register(
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct InvokeQuery {
-    #[serde(rename = "fnId")]
-    fn_id: String,
-    step: String,
-}
-
 pub async fn invoke(
     Query(query): Query<InvokeQuery>,
     State(handler): State<Arc<Handler>>,
-    Json(body): Json<serde_json::Value>,
+    Json(body): Json<Value>,
 ) -> Result<(), String> {
     println!("Body: {:#?}", body);
 

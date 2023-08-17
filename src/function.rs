@@ -1,5 +1,3 @@
-use crate::event::Event;
-
 use serde::{Deserialize, Serialize};
 use slug::slugify;
 use std::{any::Any, collections::HashMap, fmt::Debug, sync::Arc};
