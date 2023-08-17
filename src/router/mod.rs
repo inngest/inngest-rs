@@ -45,11 +45,11 @@ pub struct InvokeQuery {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct InvokeBody {
+pub struct InvokeBody<T> {
     pub ctx: InvokeBodyCtx,
-    // pub event: T,
-    // pub events: Vec<T>,
-    steps: HashMap<String, Value>,
+    pub event: T,
+    pub events: Vec<T>,
+    pub steps: HashMap<String, Value>,
     pub use_api: bool,
 }
 

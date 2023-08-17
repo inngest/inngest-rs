@@ -80,8 +80,9 @@ pub async fn invoke<F: ServableFunction>(
             println!("Name: {}", func.name());
             println!("Slug: {}", func.slug());
             println!("Trigger: {:?}", func.trigger());
+            println!("Event: {:?}", func.event());
 
-            match serde_json::from_value::<InvokeBody>(body) {
+            match serde_json::from_value::<InvokeBody<F::T>>(body) {
                 Ok(body) => {
                     println!("{:#?}", body);
                     Ok(())

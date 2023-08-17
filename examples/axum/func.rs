@@ -10,6 +10,9 @@ pub struct DummyData {
     pub lo: u8,
 }
 
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+pub struct User {}
+
 pub fn dummy_fn() -> impl ServableFunction {
     create_function(
         FunctionOps {
@@ -20,7 +23,7 @@ pub fn dummy_fn() -> impl ServableFunction {
             event: "test/event".to_string(),
             expression: None,
         },
-        |_input: Input<Event<DummyData, ()>>| {
+        |_input: Input<Event<DummyData, User>>| {
             println!("In dummy function");
 
             Ok(Box::new(()))
