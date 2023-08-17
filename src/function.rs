@@ -21,13 +21,9 @@ impl Debug for dyn ServableFunction + Send + Sync {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct Input<D, U>
-where
-    D: Serialize,
-    U: Serialize,
-{
-    pub event: Event<D, U>,
-    pub events: Vec<Event<D, U>>,
+pub struct Input<T: Serialize> {
+    pub event: T,
+    pub events: Vec<T>,
     pub ctx: InputCtx,
 }
 
@@ -79,15 +75,13 @@ impl ServableFunction for ServableFn {
     }
 }
 
-pub fn create_function<D, U, R>(
+pub fn create_function<T>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: impl Fn(Input<D, U>) -> Result<R, String> + Send + Sync + 'static,
+    func: impl Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync + 'static,
 ) -> impl ServableFunction
 where
-    D: Serialize + Default,
-    U: Serialize + Default,
-    R: Serialize,
+    T: Serialize,
 {
     ServableFn {
         opts,
