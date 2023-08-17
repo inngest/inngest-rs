@@ -51,14 +51,15 @@ impl Default for FunctionOps {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ServableFn {
+#[derive(Clone)]
+pub struct ServableFn<T: Serialize> {
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: Arc<dyn Any + Send + Sync>,
+    pub event: T,
+    pub func: Arc<dyn Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync>,
 }
 
-impl ServableFunction for ServableFn {
+impl<T: Serialize> ServableFunction for ServableFn<T> {
     fn slug(&self) -> String {
         match &self.opts.id {
             Some(id) => id.clone(),
@@ -75,17 +76,15 @@ impl ServableFunction for ServableFn {
     }
 }
 
-pub fn create_function<T>(
+pub fn create_function<T: Serialize + Default>(
     opts: FunctionOps,
     trigger: Trigger,
     func: impl Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync + 'static,
-) -> impl ServableFunction
-where
-    T: Serialize,
-{
+) -> impl ServableFunction {
     ServableFn {
         opts,
         trigger,
+        event: T::default(),
         func: Arc::new(func),
     }
 }
