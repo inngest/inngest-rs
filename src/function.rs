@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use slug::slugify;
-use std::{any::Any, collections::HashMap, fmt::Debug, sync::Arc};
+use std::{any::Any, collections::HashMap, fmt::Debug};
 
 pub trait ServableFunction {
     type T: Serialize + for<'a> Deserialize<'a> + Clone + Debug;
@@ -58,10 +58,13 @@ pub struct ServableFn<T: Serialize + for<'a> Deserialize<'a> + Clone + Debug> {
     pub opts: FunctionOps,
     pub trigger: Trigger,
     pub event: T,
-    pub func: Arc<dyn Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync>,
+    pub func: fn(Input<T>) -> Result<Box<dyn Any>, String>,
 }
 
-impl<T: Serialize + Clone + for<'a> Deserialize<'a> + Debug> ServableFunction for ServableFn<T> {
+impl<T> ServableFunction for ServableFn<T>
+where
+    T: Serialize + Clone + for<'a> Deserialize<'a> + Debug + Send + Sync,
+{
     type T = T;
 
     fn slug(&self) -> String {
@@ -88,17 +91,20 @@ impl<T: Serialize + Clone + for<'a> Deserialize<'a> + Debug> ServableFunction fo
     }
 }
 
-pub fn create_function<T: Serialize + Default + Clone + for<'a> Deserialize<'a> + Debug>(
+pub fn create_function<T>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: impl Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync + 'static,
-) -> impl ServableFunction {
-    ServableFn {
+    func: fn(Input<T>) -> Result<Box<dyn Any>, String>,
+) -> Box<dyn ServableFunction<T = T> + Send + Sync + 'static>
+where
+    T: Serialize + Default + Clone + for<'a> Deserialize<'a> + Debug + Send + Sync + 'static,
+{
+    Box::new(ServableFn {
         opts,
         trigger,
         event: T::default(),
-        func: Arc::new(func),
-    }
+        func,
+    })
 }
 
 #[derive(Debug, Deserialize, Serialize)]

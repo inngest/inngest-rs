@@ -11,6 +11,7 @@ use std::sync::Arc;
 async fn main() {
     let mut inngest_handler = Handler::new();
     inngest_handler.register_fn(func::dummy_fn());
+    inngest_handler.register_fn(func::hello_fn());
 
     let inngest_state = Arc::new(inngest_handler);
 
