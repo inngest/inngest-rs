@@ -3,16 +3,19 @@ pub mod axum;
 use crate::function::ServableFunction;
 use serde::Deserialize;
 use serde_json::Value;
-use std::{collections::HashMap, default::Default};
+use std::collections::HashMap;
 
-pub struct Handler<F: ServableFunction + Send + Sync> {
+pub struct Handler<F: ServableFunction + Send + Sync + ?Sized> {
     app_name: String,
     funcs: Vec<Box<F>>,
 }
 
-impl<F: ServableFunction + Send + Sync> Handler<F> {
+impl<F: ServableFunction + Send + Sync + ?Sized> Handler<F> {
     pub fn new() -> Self {
-        Self::default()
+        Handler {
+            app_name: "InngestApp".to_string(),
+            funcs: vec![],
+        }
     }
 
     pub fn set_name(&mut self, name: &str) {
@@ -26,15 +29,6 @@ impl<F: ServableFunction + Send + Sync> Handler<F> {
     // pub fn register_fns(&mut self, funcs: &[ServableFunction]) {
     //     self.funcs.extend_from_slice(funcs)
     // }
-}
-
-impl<F: ServableFunction + Send + Sync> Default for Handler<F> {
-    fn default() -> Self {
-        Handler {
-            app_name: "InngestApp".to_string(),
-            funcs: vec![],
-        }
-    }
 }
 
 #[derive(Deserialize)]
