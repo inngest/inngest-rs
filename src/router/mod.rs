@@ -5,12 +5,12 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 
-pub struct Handler<F: ServableFunction + Send + Sync + ?Sized> {
+pub struct Handler<F: ServableFunction + Send + Sync + 'static + ?Sized> {
     app_name: String,
     funcs: Vec<Box<F>>,
 }
 
-impl<F: ServableFunction + Send + Sync + ?Sized> Handler<F> {
+impl<F: ServableFunction + Send + Sync + 'static + ?Sized> Handler<F> {
     pub fn new() -> Self {
         Handler {
             app_name: "InngestApp".to_string(),

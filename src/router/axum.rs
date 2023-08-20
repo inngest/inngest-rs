@@ -10,7 +10,7 @@ use axum::{
 use serde_json::Value;
 use std::{collections::HashMap, default::Default, sync::Arc};
 
-pub async fn register<F: ServableFunction + Send + Sync + 'static>(
+pub async fn register<F: ServableFunction + Send + Sync + 'static + ?Sized>(
     Host(host): Host,
     path: MatchedPath,
     State(handler): State<Arc<Handler<F>>>,
@@ -67,7 +67,7 @@ pub async fn register<F: ServableFunction + Send + Sync + 'static>(
     }
 }
 
-pub async fn invoke<F: ServableFunction + Send + Sync + 'static>(
+pub async fn invoke<F: ServableFunction + Send + Sync + 'static + ?Sized>(
     Query(query): Query<InvokeQuery>,
     State(handler): State<Arc<Handler<F>>>,
     Json(body): Json<Value>,

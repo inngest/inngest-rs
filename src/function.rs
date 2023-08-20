@@ -3,12 +3,12 @@ use slug::slugify;
 use std::{any::Any, collections::HashMap, fmt::Debug};
 
 pub trait ServableFunction {
-    type T: Serialize + for<'a> Deserialize<'a> + Clone + Debug;
+    type T: Serialize + for<'a> Deserialize<'a> + Debug + 'static;
 
     fn slug(&self) -> String;
     fn name(&self) -> String;
     fn trigger(&self) -> Trigger;
-    fn event(&self) -> Self::T;
+    fn event(&self) -> &Self::T;
     fn invoke(&self, input: Input<Self::T>) -> Result<Box<dyn Any>, String>;
 }
 
@@ -54,7 +54,7 @@ impl Default for FunctionOps {
 }
 
 #[derive(Clone)]
-pub struct ServableFn<T: Serialize + for<'a> Deserialize<'a> + Clone + Debug> {
+pub struct ServableFn<T: Serialize + for<'a> Deserialize<'a> + Debug> {
     pub opts: FunctionOps,
     pub trigger: Trigger,
     pub event: T,
@@ -63,7 +63,7 @@ pub struct ServableFn<T: Serialize + for<'a> Deserialize<'a> + Clone + Debug> {
 
 impl<T> ServableFunction for ServableFn<T>
 where
-    T: Serialize + Clone + for<'a> Deserialize<'a> + Debug + Send + Sync,
+    T: Serialize + for<'a> Deserialize<'a> + Debug + Send + Sync + 'static,
 {
     type T = T;
 
@@ -82,8 +82,8 @@ where
         self.trigger.clone()
     }
 
-    fn event(&self) -> Self::T {
-        self.event.clone()
+    fn event(&self) -> &Self::T {
+        &self.event
     }
 
     fn invoke(&self, input: Input<Self::T>) -> Result<Box<dyn Any>, String> {
@@ -97,7 +97,7 @@ pub fn create_function<T>(
     func: fn(Input<T>) -> Result<Box<dyn Any>, String>,
 ) -> Box<dyn ServableFunction<T = T> + Send + Sync + 'static>
 where
-    T: Serialize + Default + Clone + for<'a> Deserialize<'a> + Debug + Send + Sync + 'static,
+    T: Serialize + Default + for<'a> Deserialize<'a> + Debug + Send + Sync + 'static,
 {
     Box::new(ServableFn {
         opts,
