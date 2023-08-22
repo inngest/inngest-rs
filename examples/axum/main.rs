@@ -8,7 +8,7 @@ use inngest::{
     router::{axum as inngest_axum, Handler},
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
@@ -30,7 +30,9 @@ async fn main() {
 }
 
 #[derive(Serialize, Deserialize)]
-struct DummyEvent {}
+struct DummyEvent {
+    data: u8,
+}
 
 #[typetag::serde]
 impl Event for DummyEvent {
@@ -43,8 +45,7 @@ impl Event for DummyEvent {
     }
 
     fn data(&self) -> &dyn std::any::Any {
-        let data: HashMap<String, String> = HashMap::new();
-        &data
+        &self.data
     }
 
     fn user(&self) -> Option<&dyn std::any::Any> {
@@ -70,7 +71,7 @@ fn dummy_fn() -> Box<dyn ServableFunction + Sync + Send> {
             event: "test/event".to_string(),
             expression: None,
         },
-        Box::new(|_input: Input<&DummyEvent>| {
+        Box::new(|_input: Input<&dyn Event>| {
             println!("In dummy function");
 
             Ok(Box::new("test result".to_string()))
