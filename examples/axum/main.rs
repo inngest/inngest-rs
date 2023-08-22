@@ -1,14 +1,14 @@
-use std::sync::Arc;
-
 use axum::{
     routing::{get, put},
     Router,
 };
-
 use inngest::{
+    event::Event,
     function::{create_function, FunctionOps, Input, ServableFunction, Trigger},
     router::{axum as inngest_axum, Handler},
 };
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, sync::Arc};
 
 #[tokio::main]
 async fn main() {
@@ -29,9 +29,38 @@ async fn main() {
         .unwrap();
 }
 
+#[derive(Serialize, Deserialize)]
 struct DummyEvent {}
 
-fn dummy_fn() -> impl ServableFunction {
+#[typetag::serde]
+impl Event for DummyEvent {
+    fn id(&self) -> Option<String> {
+        None
+    }
+
+    fn name(&self) -> String {
+        "test/event".to_string()
+    }
+
+    fn data(&self) -> &dyn std::any::Any {
+        let data: HashMap<String, String> = HashMap::new();
+        &data
+    }
+
+    fn user(&self) -> Option<&dyn std::any::Any> {
+        None
+    }
+
+    fn timestamp(&self) -> Option<u64> {
+        None
+    }
+
+    fn version(&self) -> Option<String> {
+        None
+    }
+}
+
+fn dummy_fn() -> Box<dyn ServableFunction + Sync + Send> {
     create_function(
         FunctionOps {
             name: "Dummy func".to_string(),
@@ -41,10 +70,10 @@ fn dummy_fn() -> impl ServableFunction {
             event: "test/event".to_string(),
             expression: None,
         },
-        |_input: Input<DummyEvent>| {
+        Box::new(|_input: Input<&DummyEvent>| {
             println!("In dummy function");
 
-            Ok(Box::new(()))
-        },
+            Ok(Box::new("test result".to_string()))
+        }),
     )
 }

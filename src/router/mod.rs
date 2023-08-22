@@ -18,8 +18,8 @@ impl Handler {
         self.app_name = name.to_string()
     }
 
-    pub fn register_fn(&mut self, func: impl ServableFunction + 'static + Sync + Send) {
-        self.funcs.push(Box::new(func));
+    pub fn register_fn(&mut self, func: Box<dyn ServableFunction + Sync + Send>) {
+        self.funcs.push(func);
     }
 
     // pub fn register_fns(&mut self, funcs: &[ServableFunction]) {
