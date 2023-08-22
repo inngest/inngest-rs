@@ -1,6 +1,7 @@
 pub mod axum;
 
 use crate::function::ServableFunction;
+use serde::Deserialize;
 use std::default::Default;
 
 #[derive(Debug)]
@@ -34,4 +35,11 @@ impl Default for Handler {
             funcs: vec![],
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct InvokeQuery {
+    #[serde(rename = "fnId")]
+    fn_id: String,
+    // step: String,
 }

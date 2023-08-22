@@ -20,7 +20,10 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(|| async { "Hello, World!" }))
-        .route("/api/inngest", put(inngest_axum::register))
+        .route(
+            "/api/inngest",
+            put(inngest_axum::register).post(inngest_axum::invoke),
+        )
         .with_state(inngest_state);
 
     // run it with hyper on localhost:3000
