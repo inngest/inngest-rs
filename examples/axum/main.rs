@@ -71,8 +71,12 @@ fn dummy_fn() -> Box<dyn ServableFunction + Sync + Send> {
             event: "test/event".to_string(),
             expression: None,
         },
-        Box::new(|_input: Input<&dyn Event>| {
+        Box::new(|input: Input<&dyn Event>| {
             println!("In dummy function");
+
+            let evt = input.event;
+            println!("Event: {}", evt.name());
+            println!("Data: {:?}", evt.data());
 
             Ok(Box::new("test result".to_string()))
         }),
