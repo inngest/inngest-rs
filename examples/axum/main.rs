@@ -14,6 +14,7 @@ use std::sync::Arc;
 async fn main() {
     let mut inngest_handler = Handler::new();
     inngest_handler.register_fn(dummy_fn());
+    inngest_handler.register_fn(hello_fn());
 
     let inngest_state = Arc::new(inngest_handler);
 
@@ -79,6 +80,28 @@ fn dummy_fn() -> Box<dyn ServableFunction + Sync + Send> {
             println!("Data: {:?}", evt.data());
 
             Ok(Box::new("test result".to_string()))
+        }),
+    )
+}
+
+fn hello_fn() -> Box<dyn ServableFunction + Sync + Send> {
+    create_function(
+        FunctionOps {
+            name: "Hello func".to_string(),
+            ..Default::default()
+        },
+        Trigger::EventTrigger {
+            event: "test/hello".to_string(),
+            expression: None,
+        },
+        Box::new(|input: Input<&dyn Event>| {
+            println!("In hello function");
+
+            let evt = input.event;
+            println!("Event: {}", evt.name());
+            println!("Data: {:?}", evt.data());
+
+            Ok(Box::new("test hello".to_string()))
         }),
     )
 }
