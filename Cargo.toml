@@ -1,4 +1,5 @@
 [workspace]
 members = [
+  "inngest_event",
   "inngest"
 ]
