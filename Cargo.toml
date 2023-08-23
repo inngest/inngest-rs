@@ -1,5 +1,5 @@
 [workspace]
 members = [
-  "inngest_event",
+  "macros",
   "inngest"
 ]
