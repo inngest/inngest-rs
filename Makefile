@@ -1,6 +1,6 @@
 .PHONY: dev
 dev:
-	cargo run --example axum
+	cargo run -p inngest --example axum
 
 .PHONY: test
 test:
