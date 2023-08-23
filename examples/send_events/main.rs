@@ -3,13 +3,13 @@ use std::any::Any;
 use inngest::event::{send_event, send_events, Event};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct Data {
     foo: u8,
     bar: u8,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct TestEvent {
     name: String,
     data: Data,

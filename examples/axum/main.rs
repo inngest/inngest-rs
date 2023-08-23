@@ -33,7 +33,7 @@ async fn main() {
         .unwrap();
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct DummyEvent {
     data: u8,
 }

@@ -1,13 +1,23 @@
-use std::any::Any;
+use std::{any::Any, fmt::Debug};
 
-#[typetag::serde(tag = "type")]
-pub trait Event {
-    fn id(&self) -> Option<String>;
+#[typetag::serde(tag = "type", content = "value")]
+pub trait Event: Debug {
+    fn id(&self) -> Option<String> {
+        None
+    }
+
     fn name(&self) -> String;
     fn data(&self) -> &dyn Any;
-    fn user(&self) -> Option<&dyn Any>;
-    fn timestamp(&self) -> Option<u64>;
-    fn version(&self) -> Option<String>;
+
+    fn user(&self) -> Option<&dyn Any> {
+        None
+    }
+    fn timestamp(&self) -> Option<u64> {
+        None
+    }
+    fn version(&self) -> Option<String> {
+        None
+    }
 }
 
 pub async fn send_event(event: &dyn Event) -> Result<(), String> {
