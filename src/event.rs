@@ -12,9 +12,11 @@ pub trait Event: Debug {
     fn user(&self) -> Option<&dyn Any> {
         None
     }
+
     fn timestamp(&self) -> Option<u64> {
         None
     }
+
     fn version(&self) -> Option<String> {
         None
     }
