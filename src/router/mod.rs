@@ -1,6 +1,7 @@
 pub mod axum;
 
 use crate::function::ServableFunction;
+use serde::Deserialize;
 use std::default::Default;
 
 #[derive(Debug)]
@@ -18,8 +19,8 @@ impl Handler {
         self.app_name = name.to_string()
     }
 
-    pub fn register_fn(&mut self, func: impl ServableFunction + 'static + Sync + Send) {
-        self.funcs.push(Box::new(func));
+    pub fn register_fn(&mut self, func: Box<dyn ServableFunction + Sync + Send>) {
+        self.funcs.push(func);
     }
 
     // pub fn register_fns(&mut self, funcs: &[ServableFunction]) {
@@ -34,4 +35,11 @@ impl Default for Handler {
             funcs: vec![],
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct InvokeQuery {
+    #[serde(rename = "fnId")]
+    fn_id: String,
+    // step: String,
 }

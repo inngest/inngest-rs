@@ -1,4 +1,8 @@
-use axum::extract::State;
+use axum::{
+    extract::{Query, State},
+    Json,
+};
+use serde_json::Value;
 
 use crate::{
     function::{Function, Step, StepRetry, StepRuntime},
@@ -7,6 +11,8 @@ use crate::{
 };
 
 use std::{collections::HashMap, default::Default, sync::Arc};
+
+use super::InvokeQuery;
 
 pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String> {
     let funcs: Vec<Function> = handler
@@ -54,5 +60,35 @@ pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String>
     {
         Ok(_) => Ok(()),
         Err(_) => Err("error".to_string()),
+    }
+}
+
+pub async fn invoke(
+    Query(query): Query<InvokeQuery>,
+    State(handler): State<Arc<Handler>>,
+    Json(body): Json<Value>,
+) -> Result<(), String> {
+    println!("Body: {:#?}", body);
+
+    match handler.funcs.iter().find(|f| f.slug() == query.fn_id) {
+        None => Err(format!("no function registered as ID: {}", query.fn_id)),
+        Some(func) => {
+            println!("Name: {}", func.name());
+            println!("Slug: {}", func.slug());
+            println!("Trigger: {:?}", func.trigger());
+            // println!("Event: {:?}", func.event());
+
+            Ok(())
+            // match serde_json::from_value::<InvokeBody<F::T>>(body) {
+            //     Ok(body) => {
+            //         println!("{:#?}", body);
+            //         Ok(())
+            //     }
+            //     Err(err) => {
+            //         println!("Error: {:?}", err);
+            //         Ok(())
+            //     }
+            // }
+        }
     }
 }

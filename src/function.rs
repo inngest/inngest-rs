@@ -1,7 +1,7 @@
-use std::{any::Any, collections::HashMap, fmt::Debug};
-
+use crate::event::Event;
 use serde::{Deserialize, Serialize};
 use slug::slugify;
+use std::{any::Any, collections::HashMap, fmt::Debug};
 
 pub trait ServableFunction {
     fn slug(&self) -> String;
@@ -33,7 +33,7 @@ pub struct InputCtx {
     pub step_id: String,
 }
 
-type SdkFunction<T> = fn(Input<T>) -> Result<Box<dyn Any>, String>;
+type SdkFunction = dyn Fn(Input<&dyn Event>) -> Result<Box<dyn Any>, String> + Send + Sync;
 
 #[derive(Debug, Clone)]
 pub struct FunctionOps {
@@ -52,14 +52,13 @@ impl Default for FunctionOps {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ServableFn<T> {
+pub struct ServableFn {
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: SdkFunction<T>,
+    pub func: Box<SdkFunction>,
 }
 
-impl<T> ServableFunction for ServableFn<T> {
+impl ServableFunction for ServableFn {
     fn slug(&self) -> String {
         match &self.opts.id {
             Some(id) => id.clone(),
@@ -116,14 +115,16 @@ pub enum Trigger {
     },
 }
 
-pub fn create_function<T>(
+pub fn create_function(
     opts: FunctionOps,
     trigger: Trigger,
-    func: SdkFunction<T>,
-) -> impl ServableFunction {
-    ServableFn {
+    func: Box<SdkFunction>,
+) -> Box<dyn ServableFunction + Sync + Send> {
+    let servable = ServableFn {
         opts,
         trigger,
         func,
-    }
+    };
+
+    Box::new(servable)
 }
