@@ -15,6 +15,13 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
         _ => panic!("Invalid types"),
     }
 
+    // TODO:
+    // - [ ] retrieve fields from struct
+    // - [ ] check that `name`, `data` field exists
+    // - [ ] emit compile error if `name` or `data` is not a field
+    // - [ ] check if any of these fields exists (id, user, ts, v)
+    // - [ ] rotate through the list of fields and implement the trait function
+    // for each of them appropriately
     let expanded = quote! {
         #[typetag::serde]
         impl Event for #ident {
