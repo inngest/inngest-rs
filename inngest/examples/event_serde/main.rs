@@ -1,8 +1,9 @@
 use inngest::event::Event;
+use inngest_macros::InngestEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, InngestEvent)]
 struct DummyEvent {
     name: String,
     data: DummyData,
@@ -14,16 +15,16 @@ struct DummyData {
     bar: u8,
 }
 
-#[typetag::serde]
-impl Event for DummyEvent {
-    fn name(&self) -> String {
-        "test/event".to_string()
-    }
+// #[typetag::serde]
+// impl Event for DummyEvent {
+//     fn name(&self) -> String {
+//         "test/event".to_string()
+//     }
 
-    fn data(&self) -> &dyn std::any::Any {
-        &self.data
-    }
-}
+//     fn data(&self) -> &dyn std::any::Any {
+//         &self.data
+//     }
+// }
 
 fn main() {
     let event = DummyEvent {
