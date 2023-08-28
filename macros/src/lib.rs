@@ -7,7 +7,7 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
 
     let ident = input.ident.clone();
-    // let has_id_field = has_field(&input, "id");
+    let has_id_field = has_field(&input, "id");
     let has_name_field = has_field(&input, "name");
     let has_data_field = has_field(&input, "data");
     // let has_user_field = has_field(&input, "user");
@@ -18,7 +18,11 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
         panic!("name and data fields are required");
     }
 
-    // let id_value: Option<String> = None;
+    let id_value = if has_id_field {
+        quote! { Some(self.id.clone()) }
+    } else {
+        quote! { None }
+    };
     // let user_value: Option<&dyn std::any::Any> = None;
     // let ts_value: Option<i64> = None;
     // let v_value: Option<String> = None;
@@ -27,8 +31,8 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
         #[typetag::serde]
         impl Event for #ident {
             fn id(&self) -> Option<String> {
-                // #id_value
-                None
+                #id_value
+                // None
             }
 
             fn name(&self) -> String {

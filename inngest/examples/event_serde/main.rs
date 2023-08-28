@@ -5,6 +5,7 @@ use serde_json::json;
 
 #[derive(Serialize, Deserialize, Debug, InngestEvent)]
 struct DummyEvent {
+    id: String,
     name: String,
     data: DummyData,
 }
@@ -17,6 +18,7 @@ struct DummyData {
 
 fn main() {
     let event = DummyEvent {
+        id: "something".to_string(),
         name: "test/event".to_string(),
         data: DummyData {
             foo: "hello".to_string(),
