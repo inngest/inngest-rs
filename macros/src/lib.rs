@@ -6,59 +6,31 @@ use syn::{parse_macro_input, DeriveInput};
 pub fn derive_event_trait(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
 
-    let ident = input.ident;
-    let mut event = EventFields::default();
+    let ident = input.ident.clone();
+    let has_id_field = has_field(&input, "id");
+    let has_name_field = has_field(&input, "name");
+    let has_data_field = has_field(&input, "data");
+    let has_user_field = has_field(&input, "user");
+    let has_ts_field = has_field(&input, "ts");
+    let has_v_field = has_field(&input, "v");
 
-    println!("Ident: {:?}", ident);
-
-    // TODO:
-    // - [x] retrieve fields from struct
-    // - [x] check that `name`, `data` field exists
-    // - [x] emit compile error if `name` or `data` is not a field
-    // - [ ] check if any of these fields exists (id, user, ts, v)
-    match input.data {
-        syn::Data::Struct(data) => {
-            // println!("Fields: {:#?}", data.fields);
-            match data.fields {
-                syn::Fields::Named(nf) => {
-                    for n in nf.named.iter() {
-                        if let Some(ident) = &n.ident {
-                            match ident.to_string().as_str() {
-                                "name" => {
-                                    event.name = true;
-                                }
-                                "data" => {
-                                    event.data = true;
-                                }
-                                field => {
-                                    println!("Unsupported field: {:?}", field);
-                                }
-                            }
-                        }
-                    }
-                }
-                _ => (),
-            };
-        }
-        _ => panic!("Invalid types"),
+    if !has_name_field || !has_data_field {
+        panic!("name and data fields are required");
     }
 
-    if !event.is_valid() {
-        println!("Event: {:#?}", event);
-        panic!("The event need to have a `name` and `data` field");
-    }
-
-    // - [ ] rotate through the list of fields and implement the trait function
-    // for each of them appropriately
     let expanded = quote! {
         #[typetag::serde]
         impl Event for #ident {
             fn id(&self) -> Option<String> {
-                None
+                if #has_id_field {
+                    Some(self.id.clone())
+                } else {
+                    None
+                }
             }
 
             fn name(&self) -> String {
-                "test/event".to_string()
+                self.name.clone()
             }
 
             fn data(&self) -> &dyn std::any::Any {
@@ -66,15 +38,27 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
             }
 
             fn user(&self) -> Option<&dyn std::any::Any> {
-                None
+                if #has_user_field {
+                    Some(&self.user)
+                } else {
+                    None
+                }
             }
 
             fn timestamp(&self) -> Option<i64> {
-                None
+                if #has_ts_field {
+                    Some(self.ts)
+                } else {
+                    None
+                }
             }
 
             fn version(&self) -> Option<String> {
-                None
+                if #has_v_field {
+                    Some(self.v.clone())
+                } else {
+                    None
+                }
             }
 
         }
@@ -84,18 +68,16 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-#[derive(Debug, Default)]
-struct EventFields {
-    id: bool,
-    name: bool,
-    data: bool,
-    user: bool,
-    ts: bool,
-    timestamp: bool,
-}
-
-impl EventFields {
-    fn is_valid(&self) -> bool {
-        self.name && self.data
+fn has_field(input: &DeriveInput, field_name: &str) -> bool {
+    if let syn::Data::Struct(data) = &input.data {
+        data.fields.iter().any(|field| {
+            if let Some(ident) = &field.ident {
+                ident.to_string() == field_name
+            } else {
+                false
+            }
+        })
+    } else {
+        false
     }
 }
