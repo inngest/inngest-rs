@@ -7,26 +7,28 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
 
     let ident = input.ident.clone();
-    let has_id_field = has_field(&input, "id");
+    // let has_id_field = has_field(&input, "id");
     let has_name_field = has_field(&input, "name");
     let has_data_field = has_field(&input, "data");
-    let has_user_field = has_field(&input, "user");
-    let has_ts_field = has_field(&input, "ts");
-    let has_v_field = has_field(&input, "v");
+    // let has_user_field = has_field(&input, "user");
+    // let has_ts_field = has_field(&input, "ts");
+    // let has_v_field = has_field(&input, "v");
 
     if !has_name_field || !has_data_field {
         panic!("name and data fields are required");
     }
 
+    // let id_value: Option<String> = None;
+    // let user_value: Option<&dyn std::any::Any> = None;
+    // let ts_value: Option<i64> = None;
+    // let v_value: Option<String> = None;
+
     let expanded = quote! {
         #[typetag::serde]
         impl Event for #ident {
             fn id(&self) -> Option<String> {
-                if #has_id_field {
-                    Some(self.id.clone())
-                } else {
-                    None
-                }
+                // #id_value
+                None
             }
 
             fn name(&self) -> String {
@@ -38,27 +40,15 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
             }
 
             fn user(&self) -> Option<&dyn std::any::Any> {
-                if #has_user_field {
-                    Some(&self.user)
-                } else {
-                    None
-                }
+                None
             }
 
             fn timestamp(&self) -> Option<i64> {
-                if #has_ts_field {
-                    Some(self.ts)
-                } else {
-                    None
-                }
+                None
             }
 
             fn version(&self) -> Option<String> {
-                if #has_v_field {
-                    Some(self.v.clone())
-                } else {
-                    None
-                }
+                None
             }
 
         }

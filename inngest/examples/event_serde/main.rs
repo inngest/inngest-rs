@@ -15,17 +15,6 @@ struct DummyData {
     bar: u8,
 }
 
-// #[typetag::serde]
-// impl Event for DummyEvent {
-//     fn name(&self) -> String {
-//         "test/event".to_string()
-//     }
-
-//     fn data(&self) -> &dyn std::any::Any {
-//         &self.data
-//     }
-// }
-
 fn main() {
     let event = DummyEvent {
         name: "test/event".to_string(),
@@ -51,6 +40,10 @@ fn main() {
             "user": {},
         }
     });
+
+    println!("ID: {:?}", event.id());
+    println!("Name: {:?}", event.name());
+    println!("Data: {:?}", event.data());
 
     match serde_json::from_value::<Box<dyn Event>>(jval) {
         Ok(result) => println!("Result: {:?}", result),
