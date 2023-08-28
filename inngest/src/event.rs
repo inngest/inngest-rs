@@ -13,7 +13,7 @@ pub trait Event: Debug {
         None
     }
 
-    fn timestamp(&self) -> Option<u64> {
+    fn timestamp(&self) -> Option<i64> {
         None
     }
 
