@@ -7,6 +7,7 @@ use inngest::{
     function::{create_function, FunctionOps, Input, ServableFunction, Trigger},
     router::{axum as inngest_axum, Handler},
 };
+use inngest_macros::InngestEvent;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -33,36 +34,10 @@ async fn main() {
         .unwrap();
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, InngestEvent)]
 struct DummyEvent {
+    name: String,
     data: u8,
-}
-
-#[typetag::serde]
-impl Event for DummyEvent {
-    fn id(&self) -> Option<String> {
-        None
-    }
-
-    fn name(&self) -> String {
-        "test/event".to_string()
-    }
-
-    fn data(&self) -> &dyn std::any::Any {
-        &self.data
-    }
-
-    fn user(&self) -> Option<&dyn std::any::Any> {
-        None
-    }
-
-    fn timestamp(&self) -> Option<u64> {
-        None
-    }
-
-    fn version(&self) -> Option<String> {
-        None
-    }
 }
 
 fn dummy_fn() -> Box<dyn ServableFunction + Sync + Send> {
