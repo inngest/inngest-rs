@@ -1,6 +1,5 @@
-use std::any::Any;
-
 use inngest::event::{send_event, send_events, Event};
+use inngest_macros::InngestEvent;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -9,37 +8,10 @@ struct Data {
     bar: u8,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, InngestEvent)]
 struct TestEvent {
     name: String,
     data: Data,
-}
-
-#[typetag::serde]
-impl Event for TestEvent {
-    fn id(&self) -> Option<String> {
-        None
-    }
-
-    fn name(&self) -> String {
-        "test/event".to_string()
-    }
-
-    fn data(&self) -> &dyn Any {
-        &self.data
-    }
-
-    fn user(&self) -> Option<&dyn Any> {
-        None
-    }
-
-    fn timestamp(&self) -> Option<u64> {
-        None
-    }
-
-    fn version(&self) -> Option<String> {
-        None
-    }
 }
 
 #[tokio::main]
