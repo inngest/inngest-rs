@@ -10,9 +10,9 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
     let has_id_field = has_field(&input, "id");
     let has_name_field = has_field(&input, "name");
     let has_data_field = has_field(&input, "data");
-    // let has_user_field = has_field(&input, "user");
-    // let has_ts_field = has_field(&input, "ts");
-    // let has_v_field = has_field(&input, "v");
+    let has_user_field = has_field(&input, "user");
+    let has_ts_field = has_field(&input, "ts");
+    let has_v_field = has_field(&input, "v");
 
     if !has_name_field || !has_data_field {
         panic!("name and data fields are required");
@@ -23,16 +23,27 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
     } else {
         quote! { None }
     };
-    // let user_value: Option<&dyn std::any::Any> = None;
-    // let ts_value: Option<i64> = None;
-    // let v_value: Option<String> = None;
+    let user_value = if has_user_field {
+        quote! { Some(&self.user) }
+    } else {
+        quote! { None }
+    };
+    let ts_value = if has_ts_field {
+        quote! { Some(self.ts) }
+    } else {
+        quote! { None }
+    };
+    let v_value = if has_v_field {
+        quote! { Some(self.v.clone()) }
+    } else {
+        quote! { None }
+    };
 
     let expanded = quote! {
         #[typetag::serde]
         impl Event for #ident {
             fn id(&self) -> Option<String> {
                 #id_value
-                // None
             }
 
             fn name(&self) -> String {
@@ -44,21 +55,20 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
             }
 
             fn user(&self) -> Option<&dyn std::any::Any> {
-                None
+                #user_value
             }
 
             fn timestamp(&self) -> Option<i64> {
-                None
+                #ts_value
             }
 
             fn version(&self) -> Option<String> {
-                None
+                #v_value
             }
 
         }
     };
 
-    // TokenStream::new()
     TokenStream::from(expanded)
 }
 
