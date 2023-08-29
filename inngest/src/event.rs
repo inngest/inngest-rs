@@ -1,3 +1,4 @@
+use serde_json::{json, Value};
 use std::{any::Any, fmt::Debug};
 
 #[typetag::serde(tag = "type", content = "value")]
@@ -25,10 +26,13 @@ pub trait Event: Debug {
 pub async fn send_event(event: &dyn Event) -> Result<(), String> {
     let client = reqwest::Client::new();
 
+    // Take the value where the content is
+    let payload = &json!(event)["value"];
+
     // TODO: make the result return something properly
     match client
         .post("http://127.0.0.1:8288/e/test")
-        .json(event)
+        .json(payload)
         .send()
         .await
     {
@@ -40,10 +44,15 @@ pub async fn send_event(event: &dyn Event) -> Result<(), String> {
 pub async fn send_events(events: &[&dyn Event]) -> Result<(), String> {
     let client = reqwest::Client::new();
 
+    let payload: Vec<Value> = events
+        .iter()
+        .map(|evt| json!(evt)["value"].clone())
+        .collect();
+
     // TODO: make the result return something properly
     match client
         .post("http://127.0.0.1:8288/e/test")
-        .json(events)
+        .json(&payload)
         .send()
         .await
     {
