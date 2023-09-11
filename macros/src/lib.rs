@@ -1,11 +1,9 @@
-// use once_cell::sync::Lazy;
 use proc_macro::TokenStream;
 use quote::quote;
-// use std::collections::HashMap;
 use syn::{parse_macro_input, DeriveInput};
 
-// static mut EVENTMAP: Lazy<HashMap<String, String>> = Lazy::new(|| HashMap::new());
-// static mut EventMap: HashMap<String, String> = HashMap::new();
+// TODO:
+// Create inventory registery
 
 #[proc_macro_derive(InngestEvent)]
 pub fn derive_event_trait(item: TokenStream) -> TokenStream {
@@ -74,6 +72,9 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
         }
     };
 
+    // TODO:
+    // register event into inventory registry
+
     TokenStream::from(expanded)
 }
 
@@ -90,12 +91,3 @@ fn has_field(input: &DeriveInput, field_name: &str) -> bool {
         false
     }
 }
-
-// TODO: Implement function for retrieving field value from field name
-// fn field_value() -> Option<String>
-
-// TODO: Implement function to register event name to struct type
-// fn register_event(event_name: &str, struct_name: &str) {
-//     println!("Event name: {}", event_name);
-//     println!("Struct name: {}", struct_name);
-// }
