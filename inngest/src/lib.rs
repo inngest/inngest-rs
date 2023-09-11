@@ -4,17 +4,13 @@ pub mod function;
 pub mod router;
 pub mod sdk;
 
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+__private::inventory::collect!(__private::EventMeta);
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod __private {
+    pub extern crate inventory;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    pub struct EventMeta {
+        pub ename: String,
+        pub etype: String,
     }
 }

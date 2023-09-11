@@ -2,9 +2,6 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
-// TODO:
-// Create inventory registery
-
 #[proc_macro_derive(InngestEvent)]
 pub fn derive_event_trait(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
@@ -42,6 +39,11 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
         quote! { None }
     };
 
+    let evt = event_name(&input, "event_name").expect("event_name attribute is required");
+    // let evt_name = syn::Ident::new(&evt, Span::call_site().into());
+    // println!("Name: {:#?}", evt);
+    // println!("Event: {:#?}", &input.ident.to_string());
+
     let expanded = quote! {
         #[typetag::serde]
         impl Event for #ident {
@@ -68,12 +70,14 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
             fn version(&self) -> Option<String> {
                 #v_value
             }
-
         }
-    };
 
-    // TODO:
-    // register event into inventory registry
+        // TODO: inventory submit
+        // inngest::__private::inventory::submit!(inngest::__private::EventMeta {
+        //     #evt_name,
+        //     #ident
+        // });
+    };
 
     TokenStream::from(expanded)
 }

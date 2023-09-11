@@ -6,6 +6,8 @@ use serde_json::json;
 #[derive(Serialize, Deserialize, Debug, InngestEvent)]
 struct DummyEvent {
     id: String,
+    // TODO:
+    // #[name = "test/event"]
     name: String,
     data: DummyData,
 }
