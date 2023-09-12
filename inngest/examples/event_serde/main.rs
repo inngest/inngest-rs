@@ -7,7 +7,7 @@ use serde_json::json;
 struct DummyEvent {
     id: String,
     // TODO:
-    // #[name = "test/event"]
+    #[event_name = "test/event"]
     name: String,
     data: DummyData,
 }

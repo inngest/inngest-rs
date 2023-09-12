@@ -1,8 +1,8 @@
-use proc_macro::TokenStream;
+use proc_macro::{Span, TokenStream};
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
-#[proc_macro_derive(InngestEvent)]
+#[proc_macro_derive(InngestEvent, attributes(event_name))]
 pub fn derive_event_trait(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
 
@@ -52,7 +52,7 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
             }
 
             fn name(&self) -> String {
-                self.name.clone()
+                #evt.to_string()
             }
 
             fn data(&self) -> &dyn std::any::Any {
@@ -94,4 +94,31 @@ fn has_field(input: &DeriveInput, field_name: &str) -> bool {
     } else {
         false
     }
+}
+
+fn event_name(input: &DeriveInput, attr_name: &str) -> Option<String> {
+    if let syn::Data::Struct(data) = &input.data {
+        for field in data.fields.iter() {
+            for attr in field.attrs.iter() {
+                if let Some(ident) = attr.meta.path().get_ident() {
+                    if ident.to_string() == attr_name {
+                        let val: Option<String> = match &attr.meta {
+                            syn::Meta::NameValue(meta) => match &meta.value {
+                                syn::Expr::Lit(expr) => match &expr.lit {
+                                    syn::Lit::Str(s) => Some(s.value()),
+                                    _ => None,
+                                },
+                                _ => None,
+                            },
+                            _ => None,
+                        };
+
+                        return val;
+                    }
+                }
+            }
+        }
+    }
+
+    None
 }
