@@ -68,19 +68,31 @@ pub async fn invoke(
     State(handler): State<Arc<Handler>>,
     Json(body): Json<Value>,
 ) -> Result<(), String> {
-    println!("Body: {:#?}", body);
+    println!("Body: {:#?}", &body);
+
+    let evt_name = &body["event"]["name"]
+        .as_str()
+        .expect("event payload should always have 'name'");
 
     match handler.funcs.iter().find(|f| f.slug() == query.fn_id) {
         None => Err(format!("no function registered as ID: {}", query.fn_id)),
         Some(func) => {
-            println!("Name: {}", func.name());
-            println!("Slug: {}", func.slug());
-            println!("Trigger: {:?}", func.trigger());
+            let mut evt_meta = crate::__private::EventMeta::new();
+
+            // println!("Name: {}", func.name());
+            // println!("Slug: {}", func.slug());
+            // println!("Trigger: {:?}", func.trigger());
 
             for meta in crate::__private::inventory::iter::<crate::__private::EventMeta> {
-                println!("Meta: {:#?}", meta);
+                if &meta.ename == evt_name {
+                    evt_meta = meta.clone();
+                    break;
+                }
             }
-            // println!("Event: {:?}", func.event());
+
+            if evt_meta.is_empty() {
+                return Err(format!("Event '{}' is not registered", evt_name));
+            }
 
             Ok(())
             // match serde_json::from_value::<InvokeBody<F::T>>(body) {
