@@ -19,14 +19,14 @@ impl Debug for dyn ServableFunction + Send + Sync {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Input<T> {
     pub event: T,
     pub events: Vec<T>,
     pub ctx: InputCtx,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct InputCtx {
     pub fn_id: String,
     pub run_id: String,

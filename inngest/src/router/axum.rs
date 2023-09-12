@@ -2,10 +2,11 @@ use axum::{
     extract::{Query, State},
     Json,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::{
-    function::{Function, Step, StepRetry, StepRuntime},
+    event::{self, Event},
+    function::{Function, Input, InputCtx, Step, StepRetry, StepRuntime},
     router::Handler,
     sdk::Request,
 };
@@ -68,7 +69,7 @@ pub async fn invoke(
     State(handler): State<Arc<Handler>>,
     Json(body): Json<Value>,
 ) -> Result<(), String> {
-    println!("Body: {:#?}", &body);
+    // println!("Body: {:#?}", &body);
 
     let evt_name = &body["event"]["name"]
         .as_str()
@@ -94,17 +95,29 @@ pub async fn invoke(
                 return Err(format!("Event '{}' is not registered", evt_name));
             }
 
+            // println!("Meta: {:?}", &evt_meta);
+            let jevt = json!({ "type": evt_meta.etype, "value": &body["event"] });
+            println!("JSON: {:?}", &jevt);
+
+            let evt = match serde_json::from_value::<Box<dyn Event>>(jevt) {
+                Ok(evt) => evt,
+                Err(err) => {
+                    println!("Error: {:?}", err);
+                    return Err(format!("Error parsing event: {:?}", err));
+                }
+            };
+
+            println!("Event: {:?}", evt);
+
+            let input = Input {
+                event: &evt,
+                events: vec![&evt],
+                ctx: serde_json::from_value::<InputCtx>(body["ctx"].clone()).unwrap(),
+            };
+
+            println!("Input: {:#?}", &input);
+
             Ok(())
-            // match serde_json::from_value::<InvokeBody<F::T>>(body) {
-            //     Ok(body) => {
-            //         println!("{:#?}", body);
-            //         Ok(())
-            //     }
-            //     Err(err) => {
-            //         println!("Error: {:?}", err);
-            //         Ok(())
-            //     }
-            // }
         }
     }
 }
