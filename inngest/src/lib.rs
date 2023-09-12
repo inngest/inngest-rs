@@ -10,7 +10,7 @@ pub mod __private {
     pub extern crate inventory;
 
     pub struct EventMeta {
-        pub ename: String,
-        pub etype: String,
+        pub ename: &'static str,
+        pub etype: &'static str,
     }
 }

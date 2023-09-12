@@ -1,4 +1,4 @@
-use proc_macro::{Span, TokenStream};
+use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
@@ -39,8 +39,8 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
         quote! { None }
     };
 
-    let evt = event_name(&input, "event_name").expect("event_name attribute is required");
-    // let evt_name = syn::Ident::new(&evt, Span::call_site().into());
+    let evt_name = event_name(&input, "event_name").expect("event_name attribute is required");
+    let evt_type = ident.to_string();
     // println!("Name: {:#?}", evt);
     // println!("Event: {:#?}", &input.ident.to_string());
 
@@ -52,7 +52,7 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
             }
 
             fn name(&self) -> String {
-                #evt.to_string()
+                #evt_name.to_string()
             }
 
             fn data(&self) -> &dyn std::any::Any {
@@ -72,11 +72,18 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
             }
         }
 
-        // TODO: inventory submit
-        // inngest::__private::inventory::submit!(inngest::__private::EventMeta {
-        //     #evt_name,
-        //     #ident
-        // });
+        inngest::__private::inventory::submit! {
+            #ident::inngest_register()
+        }
+
+        impl #ident {
+            pub const fn inngest_register() -> inngest::__private::EventMeta {
+                inngest::__private::EventMeta {
+                    ename: #evt_name,
+                    etype: #evt_type
+                }
+            }
+        }
     };
 
     TokenStream::from(expanded)
