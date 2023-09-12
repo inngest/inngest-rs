@@ -5,7 +5,7 @@ use axum::{
 use serde_json::{json, Value};
 
 use crate::{
-    event::{self, Event},
+    event::Event,
     function::{Function, Input, InputCtx, Step, StepRetry, StepRuntime},
     router::Handler,
     sdk::Request,
