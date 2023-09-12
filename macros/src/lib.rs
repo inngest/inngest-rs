@@ -18,31 +18,30 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
         panic!("name and data fields are required");
     }
 
+    let none = quote! { None };
     let id_value = if has_id_field {
         quote! { Some(self.id.clone()) }
     } else {
-        quote! { None }
+        none.clone()
     };
     let user_value = if has_user_field {
         quote! { Some(&self.user) }
     } else {
-        quote! { None }
+        none.clone()
     };
     let ts_value = if has_ts_field {
         quote! { Some(self.ts) }
     } else {
-        quote! { None }
+        none.clone()
     };
     let v_value = if has_v_field {
         quote! { Some(self.v.clone()) }
     } else {
-        quote! { None }
+        none.clone()
     };
 
     let evt_name = event_name(&input, "event_name").expect("event_name attribute is required");
     let evt_type = ident.to_string();
-    // println!("Name: {:#?}", evt);
-    // println!("Event: {:#?}", &input.ident.to_string());
 
     let expanded = quote! {
         #[typetag::serde]
@@ -86,7 +85,7 @@ pub fn derive_event_trait(item: TokenStream) -> TokenStream {
         }
     };
 
-    TokenStream::from(expanded)
+    expanded.into()
 }
 
 fn has_field(input: &DeriveInput, field_name: &str) -> bool {
