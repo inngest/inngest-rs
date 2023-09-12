@@ -36,6 +36,7 @@ async fn main() {
 
 #[derive(Serialize, Deserialize, Debug, InngestEvent)]
 struct DummyEvent {
+    #[event_name = "test/event"]
     name: String,
     data: u8,
 }

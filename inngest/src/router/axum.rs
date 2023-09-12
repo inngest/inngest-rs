@@ -76,6 +76,10 @@ pub async fn invoke(
             println!("Name: {}", func.name());
             println!("Slug: {}", func.slug());
             println!("Trigger: {:?}", func.trigger());
+
+            for meta in crate::__private::inventory::iter::<crate::__private::EventMeta> {
+                println!("Meta: {:#?}", meta);
+            }
             // println!("Event: {:?}", func.event());
 
             Ok(())
