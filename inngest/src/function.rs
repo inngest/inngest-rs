@@ -7,6 +7,7 @@ pub trait ServableFunction {
     fn slug(&self) -> String;
     fn name(&self) -> String;
     fn trigger(&self) -> Trigger;
+    fn func(&self) -> &SdkFunction;
 }
 
 impl Debug for dyn ServableFunction + Send + Sync {
@@ -19,14 +20,14 @@ impl Debug for dyn ServableFunction + Send + Sync {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Input<T> {
     pub event: T,
     pub events: Vec<T>,
     pub ctx: InputCtx,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct InputCtx {
     pub fn_id: String,
     pub run_id: String,
@@ -72,6 +73,10 @@ impl ServableFunction for ServableFn {
 
     fn trigger(&self) -> Trigger {
         self.trigger.clone()
+    }
+
+    fn func(&self) -> &SdkFunction {
+        self.func.as_ref()
     }
 }
 

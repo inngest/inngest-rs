@@ -10,6 +10,7 @@ struct Data {
 
 #[derive(Serialize, Deserialize, Clone, Debug, InngestEvent)]
 struct TestEvent {
+    #[event_name = "test/event"]
     name: String,
     data: Data,
 }

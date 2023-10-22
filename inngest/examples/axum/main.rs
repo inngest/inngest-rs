@@ -36,8 +36,15 @@ async fn main() {
 
 #[derive(Serialize, Deserialize, Debug, InngestEvent)]
 struct DummyEvent {
+    #[event_name = "test/event"]
     name: String,
-    data: u8,
+    data: DummyData,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct DummyData {
+    foo: u8,
+    bar: u8,
 }
 
 fn dummy_fn() -> Box<dyn ServableFunction + Sync + Send> {

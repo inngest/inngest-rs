@@ -6,6 +6,8 @@ use serde_json::json;
 #[derive(Serialize, Deserialize, Debug, InngestEvent)]
 struct DummyEvent {
     id: String,
+    // TODO:
+    #[event_name = "test/event"]
     name: String,
     data: DummyData,
 }
@@ -43,9 +45,10 @@ fn main() {
         }
     });
 
-    println!("ID: {:?}", event.id());
-    println!("Name: {:?}", event.name());
-    println!("Data: {:?}", event.data());
+    // println!("ID: {:?}", event.id());
+    // println!("Name: {:?}", event.name());
+    // println!("Data: {:?}", event.data());
+    println!("JSON: {:?}", &jval);
 
     match serde_json::from_value::<Box<dyn Event>>(jval) {
         Ok(result) => println!("Result: {:?}", result),
