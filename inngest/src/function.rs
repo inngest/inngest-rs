@@ -33,7 +33,7 @@ pub struct InputCtx {
     pub step_id: String,
 }
 
-type SdkFunction = dyn Fn(Input<&dyn Event>) -> Result<Box<dyn Any>, String> + Send + Sync;
+type SdkFunction = dyn Fn(Input<&Event>) -> Result<Box<dyn Any>, String> + Send + Sync;
 
 #[derive(Debug, Clone)]
 pub struct FunctionOps {

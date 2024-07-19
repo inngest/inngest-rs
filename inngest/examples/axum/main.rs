@@ -7,7 +7,6 @@ use inngest::{
     function::{create_function, FunctionOps, Input, ServableFunction, Trigger},
     router::{axum as inngest_axum, Handler},
 };
-use inngest_macros::InngestEvent;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -34,7 +33,7 @@ async fn main() {
         .unwrap();
 }
 
-#[derive(Serialize, Deserialize, Debug, InngestEvent)]
+#[derive(Serialize, Deserialize, Debug)]
 struct DummyEvent {
     name: String,
     data: u8,
@@ -50,12 +49,12 @@ fn dummy_fn() -> Box<dyn ServableFunction + Sync + Send> {
             event: "test/event".to_string(),
             expression: None,
         },
-        Box::new(|input: Input<&dyn Event>| {
+        Box::new(|input: Input<&Event>| {
             println!("In dummy function");
 
             let evt = input.event;
-            println!("Event: {}", evt.name());
-            println!("Data: {:?}", evt.data());
+            println!("Event: {}", evt.name);
+            // println!("Data: {:?}", evt.data);
 
             Ok(Box::new("test result".to_string()))
         }),
@@ -72,12 +71,12 @@ fn hello_fn() -> Box<dyn ServableFunction + Sync + Send> {
             event: "test/hello".to_string(),
             expression: None,
         },
-        Box::new(|input: Input<&dyn Event>| {
+        Box::new(|input: Input<&Event>| {
             println!("In hello function");
 
             let evt = input.event;
-            println!("Event: {}", evt.name());
-            println!("Data: {:?}", evt.data());
+            println!("Event: {}", evt.name);
+            // println!("Data: {:?}", evt.data());
 
             Ok(Box::new("test hello".to_string()))
         }),
