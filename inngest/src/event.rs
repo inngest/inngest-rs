@@ -1,5 +1,6 @@
 use serde::{Serialize, Deserialize};
 use serde_json::{json, Value};
+use std::default::Default;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Event {
@@ -8,6 +9,23 @@ pub struct Event {
     // TODO: data should be a generic
     pub timestamp: Option<i64>,
     pub version: Option<String>,
+}
+
+impl Default for Event {
+    fn default() -> Self {
+        Event {
+            id: None,
+            name: String::new(),
+            timestamp: None,
+            version: None
+        }
+    }
+}
+
+impl Event {
+    fn new() -> Self {
+        Event::default()
+    }
 }
 
 pub async fn send_event(event: Event) -> Result<(), String> {
