@@ -1,28 +1,16 @@
-use crate::event::Event;
+use crate::event::{Event, InngestEvent};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use slug::slugify;
 use std::{any::Any, collections::HashMap, fmt::Debug};
 
-pub trait ServableFunction {
-    fn slug(&self) -> String;
-    fn name(&self) -> String;
-    fn trigger(&self) -> Trigger;
-}
-
-impl Debug for dyn ServableFunction + Send + Sync {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ServableFn")
-            .field("name", &self.name())
-            .field("slug", &self.slug())
-            .field("trigger", &self.trigger())
-            .finish()
-    }
-}
-
 #[derive(Deserialize)]
-pub struct Input<T> {
-    pub event: T,
-    pub events: Vec<T>,
+pub struct Input<T>
+where
+    T: 'static,
+{
+    pub event: Event<T>,
+    pub events: Vec<Event<T>>,
     pub ctx: InputCtx,
 }
 
@@ -33,45 +21,53 @@ pub struct InputCtx {
     pub step_id: String,
 }
 
-type SdkFunction = dyn Fn(Input<&dyn Event>) -> Result<Box<dyn Any>, String> + Send + Sync;
-
 #[derive(Debug, Clone)]
 pub struct FunctionOps {
-    pub id: Option<String>,
-    pub name: String,
+    pub id: String,
+    pub name: Option<String>,
     pub retries: u8,
 }
 
 impl Default for FunctionOps {
     fn default() -> Self {
         FunctionOps {
-            id: None,
-            name: String::new(),
+            id: String::new(),
+            name: None,
             retries: 3,
         }
     }
 }
 
-pub struct ServableFn {
+pub struct ServableFn<T: InngestEvent> {
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: Box<SdkFunction>,
+    pub func: fn(Input<T>) -> Result<Box<dyn Any>, String>,
 }
 
-impl ServableFunction for ServableFn {
-    fn slug(&self) -> String {
-        match &self.opts.id {
-            Some(id) => id.clone(),
-            None => slugify(self.name()),
-        }
+impl<T: InngestEvent> Debug for ServableFn<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServableFn")
+            .field("id", &self.opts.id)
+            .field("trigger", &self.trigger())
+            .finish()
+    }
+}
+
+impl<T: InngestEvent> ServableFn<T> {
+    // TODO: prepend app_id
+    pub fn slug(&self) -> String {
+        slugify(self.opts.id.clone())
     }
 
-    fn name(&self) -> String {
-        self.opts.name.clone()
-    }
-
-    fn trigger(&self) -> Trigger {
+    pub fn trigger(&self) -> Trigger {
         self.trigger.clone()
+    }
+
+    pub fn event(&self, data: &Value) -> Option<Event<T>> {
+        match serde_json::from_value::<Event<T>>(data.clone()) {
+            Ok(val) => Some(val),
+            Err(_err) => None,
+        }
     }
 }
 
@@ -115,16 +111,14 @@ pub enum Trigger {
     },
 }
 
-pub fn create_function(
+pub fn create_function<T: InngestEvent>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: Box<SdkFunction>,
-) -> Box<dyn ServableFunction + Sync + Send> {
-    let servable = ServableFn {
+    func: fn(Input<T>) -> Result<Box<dyn Any>, String>,
+) -> ServableFn<T> {
+    ServableFn {
         opts,
         trigger,
         func,
-    };
-
-    Box::new(servable)
+    }
 }

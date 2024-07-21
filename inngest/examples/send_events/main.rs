@@ -1,5 +1,4 @@
 use inngest::event::{send_event, send_events, Event};
-use inngest_macros::InngestEvent;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -8,25 +7,19 @@ struct Data {
     bar: u8,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, InngestEvent)]
-struct TestEvent {
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct TestEvent<T> {
     name: String,
-    data: Data,
+    data: T,
 }
 
 #[tokio::main]
 async fn main() {
-    let evt = TestEvent {
-        name: "test/event".to_string(),
-        data: Data { foo: 1, bar: 2 },
-    };
+    let evt = Event::<Data>::new("test/event", Data { foo: 1, bar: 2 });
 
-    let evt2 = TestEvent {
-        name: "test/yolo".to_string(),
-        data: Data { foo: 10, bar: 20 },
-    };
+    let evt2 = Event::<Data>::new("test/yolo", Data { foo: 10, bar: 20 });
 
-    let evts: Vec<&dyn Event> = vec![&evt, &evt2];
+    let evts: Vec<&Event<Data>> = vec![&evt, &evt2];
 
     match send_event(&evt).await {
         Ok(_) => println!("Success"),
