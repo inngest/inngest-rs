@@ -5,7 +5,10 @@ use axum::{
 use serde_json::Value;
 
 use crate::{
-    event::InngestEvent, function::{Function, Input, InputCtx, Step, StepRetry, StepRuntime}, router::Handler, sdk::Request
+    event::InngestEvent,
+    function::{Function, Input, InputCtx, Step, StepRetry, StepRuntime},
+    router::Handler,
+    sdk::Request,
 };
 
 use std::{collections::HashMap, default::Default, sync::Arc};
@@ -13,7 +16,7 @@ use std::{collections::HashMap, default::Default, sync::Arc};
 use super::InvokeQuery;
 
 pub async fn register<T: InngestEvent>(
-    State(handler): State<Arc<Handler<T>>>
+    State(handler): State<Arc<Handler<T>>>,
 ) -> Result<(), String> {
     let funcs: Vec<Function> = handler
         .funcs
@@ -77,17 +80,16 @@ pub async fn invoke<T: InngestEvent>(
 
             match func.event(&body["event"]) {
                 None => Err("failed to parse event".to_string()),
-                Some(evt) => {
-                    (func.func)(Input {
-                        event: evt,
-                        events: vec![],
-                        ctx: InputCtx {
-                            fn_id: String::new(),
-                            run_id: String::new(),
-                            step_id: String::new()
-                        }
-                    }).map(|_res| ())
-                }
+                Some(evt) => (func.func)(Input {
+                    event: evt,
+                    events: vec![],
+                    ctx: InputCtx {
+                        fn_id: String::new(),
+                        run_id: String::new(),
+                        step_id: String::new(),
+                    },
+                })
+                .map(|_res| ()),
             }
         }
     }
