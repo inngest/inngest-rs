@@ -8,24 +8,30 @@ struct Data {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct TestEvent {
+struct TestEvent<T> {
     name: String,
-    data: Data,
+    data: T,
 }
 
 #[tokio::main]
 async fn main() {
-    let evt = TestEvent {
+    let evt = Event::<Data> {
+        id: None,
         name: "test/event".to_string(),
-        // data: Data { foo: 1, bar: 2 },
+        data: Data { foo: 1, bar: 2 },
+        timestamp: None,
+        version: None,
     };
 
-    let evt2 = TestEvent {
+    let evt2 = Event::<Data> {
+        id: None,
         name: "test/yolo".to_string(),
-        // data: Data { foo: 10, bar: 20 },
+        data: Data { foo: 10, bar: 20 },
+        timestamp: None,
+        version: None,
     };
 
-    let evts: Vec<Event> = vec![&evt, &evt2];
+    let evts: Vec<&Event::<Data>> = vec![&evt, &evt2];
 
     match send_event(&evt).await {
         Ok(_) => println!("Success"),
