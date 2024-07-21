@@ -4,10 +4,11 @@ use std::collections::HashMap;
 
 use crate::{
     event::InngestEvent,
-    function::{Function, ServableFn, Step, StepRetry, StepRuntime},
+    function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
     sdk::Request,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub struct Handler<T: InngestEvent> {
     app_name: String,
@@ -83,10 +84,30 @@ where
             .map_err(|_err| "error registering".to_string())
     }
 
-    // TODO
     // run the specified function
-    pub fn run() -> Result<(), String> {
-        Err("not implemented".to_string())
+    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<(), String> {
+        match self.funcs.iter().find(|f| f.slug() == query.fn_id) {
+            None => Err(format!("no function registered as ID: {}", query.fn_id)),
+            Some(func) => {
+                println!("Slug: {}", func.slug());
+                println!("Trigger: {:?}", func.trigger());
+                println!("Event: {:?}", func.event(&body["event"]));
+
+                match func.event(&body["event"]) {
+                    None => Err("failed to parse event".to_string()),
+                    Some(evt) => (func.func)(Input {
+                        event: evt,
+                        events: vec![],
+                        ctx: InputCtx {
+                            fn_id: String::new(),
+                            run_id: String::new(),
+                            step_id: String::new(),
+                        },
+                    })
+                    .map(|_res| ()),
+                }
+            }
+        }
     }
 }
 

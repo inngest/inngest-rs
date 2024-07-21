@@ -6,7 +6,6 @@ use serde_json::Value;
 
 use crate::{
     event::InngestEvent,
-    function::{Input, InputCtx},
     router::Handler,
 };
 
@@ -24,28 +23,5 @@ pub async fn invoke<T: InngestEvent>(
     State(handler): State<Arc<Handler<T>>>,
     Json(body): Json<Value>,
 ) -> Result<(), String> {
-    println!("Body: {:#?}", body);
-
-    match handler.funcs.iter().find(|f| f.slug() == query.fn_id) {
-        None => Err(format!("no function registered as ID: {}", query.fn_id)),
-        Some(func) => {
-            println!("Slug: {}", func.slug());
-            println!("Trigger: {:?}", func.trigger());
-            println!("Event: {:?}", func.event(&body["event"]));
-
-            match func.event(&body["event"]) {
-                None => Err("failed to parse event".to_string()),
-                Some(evt) => (func.func)(Input {
-                    event: evt,
-                    events: vec![],
-                    ctx: InputCtx {
-                        fn_id: String::new(),
-                        run_id: String::new(),
-                        step_id: String::new(),
-                    },
-                })
-                .map(|_res| ()),
-            }
-        }
-    }
+    handler.run(query, &body)
 }
