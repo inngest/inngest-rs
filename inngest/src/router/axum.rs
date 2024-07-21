@@ -76,6 +76,9 @@ pub async fn invoke<T: Serialize + for<'a> Deserialize<'a> + 'static>(
         Some(func) => {
             println!("Slug: {}", func.slug());
             println!("Trigger: {:?}", func.trigger());
+
+            // println!("Event: {:?}", func.event(body["event"]));
+
             // println!("Event: {:?}", func.event());
 
             // match (func.func)() {

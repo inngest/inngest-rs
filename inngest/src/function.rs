@@ -1,5 +1,6 @@
 use crate::event::Event;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use slug::slugify;
 use std::{any::Any, collections::HashMap, fmt::Debug};
 
@@ -57,6 +58,13 @@ where
 
     pub fn trigger(&self) -> Trigger {
         self.trigger.clone()
+    }
+
+    pub fn event(&self, data: Value) -> Option<Event<T>> {
+        match serde_json::from_value::<Event<T>>(data) {
+            Ok(val) => Some(val),
+            Err(_) => None,
+        }
     }
 }
 
