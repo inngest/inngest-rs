@@ -3,7 +3,6 @@ use axum::{
     Router,
 };
 use inngest::{
-    event::Event,
     function::{create_function, FunctionOps, Input, ServableFunction, Trigger},
     router::{axum as inngest_axum, Handler},
 };
@@ -34,7 +33,7 @@ async fn main() {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct DummyEvent {
+struct TestData {
     name: String,
     data: u8,
 }
@@ -49,7 +48,7 @@ fn dummy_fn() -> Box<dyn ServableFunction + Sync + Send> {
             event: "test/event".to_string(),
             expression: None,
         },
-        Box::new(|input: Input<&Event>| {
+        Box::new(|input: Input<TestData>| {
             println!("In dummy function");
 
             let evt = input.event;
@@ -71,7 +70,7 @@ fn hello_fn() -> Box<dyn ServableFunction + Sync + Send> {
             event: "test/hello".to_string(),
             expression: None,
         },
-        Box::new(|input: Input<&Event>| {
+        Box::new(|input: Input<TestData>| {
             println!("In hello function");
 
             let evt = input.event;
