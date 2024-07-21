@@ -66,7 +66,7 @@ impl<T: InngestEvent> ServableFn<T> {
     pub fn event(&self, data: &Value) -> Option<Event<T>> {
         match serde_json::from_value::<Event<T>>(data.clone()) {
             Ok(val) => Some(val),
-            Err(_) => None,
+            Err(_err) => None,
         }
     }
 }

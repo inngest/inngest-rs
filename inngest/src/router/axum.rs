@@ -73,7 +73,6 @@ pub async fn invoke<T: InngestEvent>(
         Some(func) => {
             println!("Slug: {}", func.slug());
             println!("Trigger: {:?}", func.trigger());
-
             println!("Event: {:?}", func.event(&body["event"]));
 
             // println!("Event: {:?}", func.event());
