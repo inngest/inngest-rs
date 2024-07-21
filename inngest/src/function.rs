@@ -20,9 +20,12 @@ impl Debug for dyn ServableFunction + Send + Sync {
 }
 
 #[derive(Deserialize)]
-pub struct Input<T> {
-    pub event: T,
-    pub events: Vec<T>,
+pub struct Input<T>
+where
+    T: 'static,
+{
+    pub event: Event<T>,
+    pub events: Vec<Event<T>>,
     pub ctx: InputCtx,
 }
 
@@ -32,8 +35,6 @@ pub struct InputCtx {
     pub run_id: String,
     pub step_id: String,
 }
-
-type SdkFunction = dyn Fn(Input<&Event>) -> Result<Box<dyn Any>, String> + Send + Sync;
 
 #[derive(Debug, Clone)]
 pub struct FunctionOps {
@@ -52,13 +53,19 @@ impl Default for FunctionOps {
     }
 }
 
-pub struct ServableFn {
+pub struct ServableFn<T>
+where
+    T: Serialize + for<'a> Deserialize<'a> + 'static,
+{
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: Box<SdkFunction>,
+    pub func: Box<dyn Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync>,
 }
 
-impl ServableFunction for ServableFn {
+impl<T> ServableFunction for ServableFn<T>
+where
+    T: Serialize + for<'a> Deserialize<'a> + 'static,
+{
     fn slug(&self) -> String {
         match &self.opts.id {
             Some(id) => id.clone(),
@@ -115,10 +122,10 @@ pub enum Trigger {
     },
 }
 
-pub fn create_function(
+pub fn create_function<T: Serialize + for<'a> Deserialize<'a> + 'static>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: Box<SdkFunction>,
+    func: Box<dyn Fn(Input<T>) -> Result<Box<dyn Any>, String> + Send + Sync>,
 ) -> Box<dyn ServableFunction + Sync + Send> {
     let servable = ServableFn {
         opts,

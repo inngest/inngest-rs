@@ -1,43 +1,31 @@
 use serde::{Serialize, Deserialize};
 use serde_json::{json, Value};
-use std::default::Default;
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Event {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Event<T>
+where T: 'static
+{
     pub id: Option<String>,
     pub name: String,
-    // TODO: data should be a generic
+    pub data: T,
     pub timestamp: Option<i64>,
     pub version: Option<String>,
 }
 
-impl Default for Event {
-    fn default() -> Self {
-        Event {
-            id: None,
-            name: String::new(),
-            timestamp: None,
-            version: None
-        }
-    }
-}
+// impl Event {
+//     fn new() -> Self {
+//         Event::default()
+//     }
+// }
 
-impl Event {
-    fn new() -> Self {
-        Event::default()
-    }
-}
-
-pub async fn send_event(event: Event) -> Result<(), String> {
+pub async fn send_event<T: Serialize + for<'a> Deserialize<'a>>(event: &Event<T>) -> Result<(), String> {
     let client = reqwest::Client::new();
-
-    // Take the value where the content is
-    let payload = &json!(event)["value"];
+    let payload = json!(event);
 
     // TODO: make the result return something properly
     match client
         .post("http://127.0.0.1:8288/e/test")
-        .json(payload)
+        .json(&payload)
         .send()
         .await
     {
@@ -46,12 +34,11 @@ pub async fn send_event(event: Event) -> Result<(), String> {
     }
 }
 
-pub async fn send_events(events: &[&Event]) -> Result<(), String> {
+pub async fn send_events<T: Serialize + for<'a> Deserialize<'a>>(events: &[&Event<T>]) -> Result<(), String> {
     let client = reqwest::Client::new();
-
     let payload: Vec<Value> = events
         .iter()
-        .map(|evt| json!(evt)["value"].clone())
+        .map(|evt| json!(evt))
         .collect();
 
     // TODO: make the result return something properly
