@@ -15,21 +15,15 @@ struct TestEvent<T> {
 
 #[tokio::main]
 async fn main() {
-    let evt = Event::<Data> {
-        id: None,
-        name: "test/event".to_string(),
-        data: Data { foo: 1, bar: 2 },
-        timestamp: None,
-        version: None,
-    };
+    let evt = Event::<Data>::new(
+        "test/event",
+        Data { foo: 1, bar: 2 }
+    );
 
-    let evt2 = Event::<Data> {
-        id: None,
-        name: "test/yolo".to_string(),
-        data: Data { foo: 10, bar: 20 },
-        timestamp: None,
-        version: None,
-    };
+    let evt2 = Event::<Data>::new(
+        "test/yolo",
+        Data { foo: 10, bar: 20 }
+    );
 
     let evts: Vec<&Event::<Data>> = vec![&evt, &evt2];
 

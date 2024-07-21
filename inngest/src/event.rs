@@ -12,11 +12,34 @@ where T: 'static
     pub version: Option<String>,
 }
 
-// impl Event {
-//     fn new() -> Self {
-//         Event::default()
-//     }
-// }
+impl<T> Event<T>
+where T: Serialize + for<'a> Deserialize<'a> + 'static
+{
+    pub fn new(name: &str, data: T) -> Self {
+        Event {
+            id: None,
+            name: name.to_string(),
+            data,
+            timestamp: None,
+            version: None
+        }
+    }
+
+    pub fn id(&mut self, id: &str) -> &mut Self {
+        self.id = Some(id.to_string());
+        self
+    }
+
+    pub fn timestamp(&mut self, ts: i64) -> &mut Self {
+        self.timestamp = Some(ts);
+        self
+    }
+
+    pub fn version(&mut self, v: &str) -> &mut Self {
+        self.version = Some(v.to_string());
+        self
+    }
+}
 
 pub async fn send_event<T: Serialize + for<'a> Deserialize<'a>>(event: &Event<T>) -> Result<(), String> {
     let client = reqwest::Client::new();
