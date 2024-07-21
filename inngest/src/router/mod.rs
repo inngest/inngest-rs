@@ -1,6 +1,12 @@
 pub mod axum;
 
-use crate::{event::InngestEvent, function::ServableFn};
+use std::collections::HashMap;
+
+use crate::{
+    event::InngestEvent,
+    function::{Function, ServableFn, Step, StepRetry, StepRuntime},
+    sdk::Request,
+};
 use serde::{Deserialize, Serialize};
 
 pub struct Handler<T: InngestEvent> {
@@ -31,10 +37,50 @@ where
     //     self.funcs.extend_from_slice(funcs)
     // }
 
-    // TODO
     // sync the registered functions
-    pub fn sync() -> Result<(), String> {
-        Err("not implemented".to_string())
+    pub async fn sync(&self, framwork: &str) -> Result<(), String> {
+        let functions: Vec<Function> = self
+            .funcs
+            .iter()
+            .map(|f| {
+                let mut steps = HashMap::new();
+                steps.insert(
+                    "step".to_string(),
+                    Step {
+                        id: "step".to_string(),
+                        name: "step".to_string(),
+                        runtime: StepRuntime {
+                            url: "http://127.0.0.1:3000/api/inngest?fnId=dummy-func&step=step"
+                                .to_string(),
+                            method: "http".to_string(),
+                        },
+                        retries: StepRetry { attempts: 3 },
+                    },
+                );
+
+                Function {
+                    id: f.slug(),
+                    name: f.slug(),
+                    triggers: vec![f.trigger()],
+                    steps,
+                }
+            })
+            .collect();
+
+        let req = Request {
+            framework: framwork.to_string(),
+            functions,
+            url: "http://127.0.0.1:3000/api/inngest".to_string(),
+            ..Default::default()
+        };
+
+        reqwest::Client::new()
+            .post("http://127.0.0.1:8288/fn/register")
+            .json(&req)
+            .send()
+            .await
+            .map(|_res| ())
+            .map_err(|_err| "error registering".to_string())
     }
 
     // TODO

@@ -6,61 +6,17 @@ use serde_json::Value;
 
 use crate::{
     event::InngestEvent,
-    function::{Function, Input, InputCtx, Step, StepRetry, StepRuntime},
+    function::{Input, InputCtx},
     router::Handler,
-    sdk::Request,
 };
 
 use super::RunQueryParams;
-use std::{collections::HashMap, default::Default, sync::Arc};
+use std::sync::Arc;
 
 pub async fn register<T: InngestEvent>(
     State(handler): State<Arc<Handler<T>>>,
 ) -> Result<(), String> {
-    let funcs: Vec<Function> = handler
-        .funcs
-        .iter()
-        .map(|f| {
-            let mut steps = HashMap::new();
-            steps.insert(
-                "step".to_string(),
-                Step {
-                    id: "step".to_string(),
-                    name: "step".to_string(),
-                    runtime: StepRuntime {
-                        url: "http://127.0.0.1:3000/api/inngest?fnId=dummy-func&step=step"
-                            .to_string(),
-                        method: "http".to_string(),
-                    },
-                    retries: StepRetry { attempts: 3 },
-                },
-            );
-
-            Function {
-                id: f.slug(),
-                name: f.slug(), // TODO: use the proper name
-                triggers: vec![f.trigger()],
-                steps,
-            }
-        })
-        .collect();
-
-    let req = Request {
-        framework: "axum".to_string(),
-        functions: funcs,
-        url: "http://127.0.0.1:3000/api/inngest".to_string(),
-        ..Default::default()
-    };
-
-    let client = reqwest::Client::new();
-
-    client
-        .post("http://127.0.0.1:8288/fn/register")
-        .json(&req)
-        .send()
-        .await
-        .map(|_| ())
-        .map_err(|_| "error".to_string())
+    handler.sync("axum").await
 }
 
 pub async fn invoke<T: InngestEvent>(
