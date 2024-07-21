@@ -21,7 +21,7 @@ impl Default for Request {
         let version = env!("CARGO_PKG_VERSION");
 
         Request {
-            app_name: "InngestApp".to_string(),
+            app_name: "RustDev".to_string(),
             deploy_type: "ping".to_string(),
             url: "".to_string(),
             v: "1".to_string(),
