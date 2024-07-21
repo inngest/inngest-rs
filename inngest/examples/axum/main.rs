@@ -3,7 +3,7 @@ use axum::{
     Router,
 };
 use inngest::{
-    function::{create_function, FunctionOps, Input, ServableFunction, Trigger},
+    function::{create_function, FunctionOps, Input, ServableFn, Trigger},
     router::{axum as inngest_axum, Handler},
 };
 use serde::{Deserialize, Serialize};
@@ -38,17 +38,17 @@ struct TestData {
     data: u8,
 }
 
-fn dummy_fn() -> Box<dyn ServableFunction + Sync + Send> {
+fn dummy_fn() -> ServableFn<TestData> {
     create_function(
         FunctionOps {
-            name: "Dummy func".to_string(),
+            id: "Dummy func".to_string(),
             ..Default::default()
         },
         Trigger::EventTrigger {
             event: "test/event".to_string(),
             expression: None,
         },
-        Box::new(|input: Input<TestData>| {
+        |input: Input<TestData>| {
             println!("In dummy function");
 
             let evt = input.event;
@@ -56,21 +56,21 @@ fn dummy_fn() -> Box<dyn ServableFunction + Sync + Send> {
             // println!("Data: {:?}", evt.data);
 
             Ok(Box::new("test result".to_string()))
-        }),
+        },
     )
 }
 
-fn hello_fn() -> Box<dyn ServableFunction + Sync + Send> {
+fn hello_fn() -> ServableFn<TestData> {
     create_function(
         FunctionOps {
-            name: "Hello func".to_string(),
+            id: "Hello func".to_string(),
             ..Default::default()
         },
         Trigger::EventTrigger {
             event: "test/hello".to_string(),
             expression: None,
         },
-        Box::new(|input: Input<TestData>| {
+        |input: Input<TestData>| {
             println!("In hello function");
 
             let evt = input.event;
@@ -78,6 +78,6 @@ fn hello_fn() -> Box<dyn ServableFunction + Sync + Send> {
             // println!("Data: {:?}", evt.data());
 
             Ok(Box::new("test hello".to_string()))
-        }),
+        },
     )
 }

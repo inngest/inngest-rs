@@ -1,40 +1,38 @@
 pub mod axum;
 
-use crate::function::ServableFunction;
-use serde::Deserialize;
-use std::default::Default;
+use crate::function::ServableFn;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
-pub struct Handler {
+pub struct Handler<T>
+where
+    T: Serialize + for<'a> Deserialize<'a> + 'static,
+{
     app_name: String,
-    funcs: Vec<Box<dyn ServableFunction + Sync + Send>>,
+    funcs: Vec<ServableFn<T>>,
 }
 
-impl Handler {
+impl<T> Handler<T>
+where
+    T: Serialize + for<'a> Deserialize<'a> + 'static,
+{
     pub fn new() -> Self {
-        Self::default()
+        Handler {
+            app_name: "RustDev".to_string(),
+            funcs: vec![],
+        }
     }
 
     pub fn set_name(&mut self, name: &str) {
         self.app_name = name.to_string()
     }
 
-    pub fn register_fn(&mut self, func: Box<dyn ServableFunction + Sync + Send>) {
+    pub fn register_fn(&mut self, func: ServableFn<T>) {
         self.funcs.push(func);
     }
 
     // pub fn register_fns(&mut self, funcs: &[ServableFunction]) {
     //     self.funcs.extend_from_slice(funcs)
     // }
-}
-
-impl Default for Handler {
-    fn default() -> Self {
-        Handler {
-            app_name: "InngestApp".to_string(),
-            funcs: vec![],
-        }
-    }
 }
 
 #[derive(Deserialize)]

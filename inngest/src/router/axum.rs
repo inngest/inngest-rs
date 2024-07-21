@@ -2,6 +2,7 @@ use axum::{
     extract::{Query, State},
     Json,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
@@ -14,7 +15,9 @@ use std::{collections::HashMap, default::Default, sync::Arc};
 
 use super::InvokeQuery;
 
-pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String> {
+pub async fn register<T: Serialize + for<'a> Deserialize<'a> + 'static>(
+    State(handler): State<Arc<Handler<T>>>
+) -> Result<(), String> {
     let funcs: Vec<Function> = handler
         .funcs
         .iter()
@@ -36,7 +39,7 @@ pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String>
 
             Function {
                 id: f.slug(),
-                name: f.name(),
+                name: f.slug(), // TODO: use the proper name
                 triggers: vec![f.trigger()],
                 steps,
             }
@@ -52,20 +55,18 @@ pub async fn register(State(handler): State<Arc<Handler>>) -> Result<(), String>
 
     let client = reqwest::Client::new();
 
-    match client
+    client
         .post("http://127.0.0.1:8288/fn/register")
         .json(&req)
         .send()
         .await
-    {
-        Ok(_) => Ok(()),
-        Err(_) => Err("error".to_string()),
-    }
+        .map(|_| ())
+        .map_err(|_| "error".to_string())
 }
 
-pub async fn invoke(
+pub async fn invoke<T: Serialize + for<'a> Deserialize<'a> + 'static>(
     Query(query): Query<InvokeQuery>,
-    State(handler): State<Arc<Handler>>,
+    State(handler): State<Arc<Handler<T>>>,
     Json(body): Json<Value>,
 ) -> Result<(), String> {
     println!("Body: {:#?}", body);
@@ -73,10 +74,18 @@ pub async fn invoke(
     match handler.funcs.iter().find(|f| f.slug() == query.fn_id) {
         None => Err(format!("no function registered as ID: {}", query.fn_id)),
         Some(func) => {
-            println!("Name: {}", func.name());
             println!("Slug: {}", func.slug());
             println!("Trigger: {:?}", func.trigger());
             // println!("Event: {:?}", func.event());
+
+            // match (func.func)() {
+            //     Ok(_) => {
+            //         println!("OK!!");
+            //     }
+            //     Err(err) => {
+            //         println!("{:?}", err)
+            //     }
+            // }
 
             Ok(())
             // match serde_json::from_value::<InvokeBody<F::T>>(body) {
