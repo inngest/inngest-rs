@@ -5,7 +5,7 @@ use axum::{
 use serde_json::Value;
 
 use crate::{
-    event::InngestEvent, function::{Function, Step, StepRetry, StepRuntime}, router::Handler, sdk::Request
+    event::InngestEvent, function::{Function, Input, InputCtx, Step, StepRetry, StepRuntime}, router::Handler, sdk::Request
 };
 
 use std::{collections::HashMap, default::Default, sync::Arc};
@@ -75,28 +75,20 @@ pub async fn invoke<T: InngestEvent>(
             println!("Trigger: {:?}", func.trigger());
             println!("Event: {:?}", func.event(&body["event"]));
 
-            // println!("Event: {:?}", func.event());
-
-            // match (func.func)() {
-            //     Ok(_) => {
-            //         println!("OK!!");
-            //     }
-            //     Err(err) => {
-            //         println!("{:?}", err)
-            //     }
-            // }
-
-            Ok(())
-            // match serde_json::from_value::<InvokeBody<F::T>>(body) {
-            //     Ok(body) => {
-            //         println!("{:#?}", body);
-            //         Ok(())
-            //     }
-            //     Err(err) => {
-            //         println!("Error: {:?}", err);
-            //         Ok(())
-            //     }
-            // }
+            match func.event(&body["event"]) {
+                None => Err("failed to parse event".to_string()),
+                Some(evt) => {
+                    (func.func)(Input {
+                        event: evt,
+                        events: vec![],
+                        ctx: InputCtx {
+                            fn_id: String::new(),
+                            run_id: String::new(),
+                            step_id: String::new()
+                        }
+                    }).map(|_res| ())
+                }
+            }
         }
     }
 }
