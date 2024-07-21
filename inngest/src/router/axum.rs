@@ -11,9 +11,8 @@ use crate::{
     sdk::Request,
 };
 
+use super::RunQueryParams;
 use std::{collections::HashMap, default::Default, sync::Arc};
-
-use super::InvokeQuery;
 
 pub async fn register<T: InngestEvent>(
     State(handler): State<Arc<Handler<T>>>,
@@ -65,7 +64,7 @@ pub async fn register<T: InngestEvent>(
 }
 
 pub async fn invoke<T: InngestEvent>(
-    Query(query): Query<InvokeQuery>,
+    Query(query): Query<RunQueryParams>,
     State(handler): State<Arc<Handler<T>>>,
     Json(body): Json<Value>,
 ) -> Result<(), String> {

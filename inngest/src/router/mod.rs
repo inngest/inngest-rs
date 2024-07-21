@@ -30,11 +30,22 @@ where
     // pub fn register_fns(&mut self, funcs: &[ServableFunction]) {
     //     self.funcs.extend_from_slice(funcs)
     // }
+
+    // TODO
+    // sync the registered functions
+    pub fn sync() -> Result<(), String> {
+        Err("not implemented".to_string())
+    }
+
+    // TODO
+    // run the specified function
+    pub fn run() -> Result<(), String> {
+        Err("not implemented".to_string())
+    }
 }
 
 #[derive(Deserialize)]
-pub struct InvokeQuery {
+pub struct RunQueryParams {
     #[serde(rename = "fnId")]
     fn_id: String,
-    // step: String,
 }
