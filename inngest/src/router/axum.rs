@@ -2,20 +2,17 @@ use axum::{
     extract::{Query, State},
     Json,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    function::{Function, Step, StepRetry, StepRuntime},
-    router::Handler,
-    sdk::Request,
+    event::InngestEvent, function::{Function, Step, StepRetry, StepRuntime}, router::Handler, sdk::Request
 };
 
 use std::{collections::HashMap, default::Default, sync::Arc};
 
 use super::InvokeQuery;
 
-pub async fn register<T: Serialize + for<'a> Deserialize<'a> + 'static>(
+pub async fn register<T: InngestEvent>(
     State(handler): State<Arc<Handler<T>>>
 ) -> Result<(), String> {
     let funcs: Vec<Function> = handler
@@ -64,7 +61,7 @@ pub async fn register<T: Serialize + for<'a> Deserialize<'a> + 'static>(
         .map_err(|_| "error".to_string())
 }
 
-pub async fn invoke<T: Serialize + for<'a> Deserialize<'a> + 'static>(
+pub async fn invoke<T: InngestEvent>(
     Query(query): Query<InvokeQuery>,
     State(handler): State<Arc<Handler<T>>>,
     Json(body): Json<Value>,
@@ -77,7 +74,7 @@ pub async fn invoke<T: Serialize + for<'a> Deserialize<'a> + 'static>(
             println!("Slug: {}", func.slug());
             println!("Trigger: {:?}", func.trigger());
 
-            // println!("Event: {:?}", func.event(body["event"]));
+            println!("Event: {:?}", func.event(&body["event"]));
 
             // println!("Event: {:?}", func.event());
 

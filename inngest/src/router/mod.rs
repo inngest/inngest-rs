@@ -1,17 +1,14 @@
 pub mod axum;
 
-use crate::function::ServableFn;
+use crate::{event::InngestEvent, function::ServableFn};
 use serde::{Deserialize, Serialize};
 
-pub struct Handler<T>
-where
-    T: Serialize + for<'a> Deserialize<'a> + 'static,
-{
+pub struct Handler<T: InngestEvent> {
     app_name: String,
     funcs: Vec<ServableFn<T>>,
 }
 
-impl<T> Handler<T>
+impl<T: InngestEvent> Handler<T>
 where
     T: Serialize + for<'a> Deserialize<'a> + 'static,
 {

@@ -1,5 +1,10 @@
+use std::fmt::Debug;
+
 use serde::{Serialize, Deserialize};
 use serde_json::{json, Value};
+
+pub trait InngestEvent: Serialize + for<'a> Deserialize<'a> + Debug + 'static {}
+impl<T: Serialize + for<'a> Deserialize<'a> + Debug + 'static> InngestEvent for T {}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Event<T>
@@ -13,7 +18,7 @@ where T: 'static
 }
 
 impl<T> Event<T>
-where T: Serialize + for<'a> Deserialize<'a> + 'static
+where T: InngestEvent
 {
     pub fn new(name: &str, data: T) -> Self {
         Event {
@@ -41,7 +46,7 @@ where T: Serialize + for<'a> Deserialize<'a> + 'static
     }
 }
 
-pub async fn send_event<T: Serialize + for<'a> Deserialize<'a>>(event: &Event<T>) -> Result<(), String> {
+pub async fn send_event<T: InngestEvent>(event: &Event<T>) -> Result<(), String> {
     let client = reqwest::Client::new();
     let payload = json!(event);
 
@@ -57,7 +62,7 @@ pub async fn send_event<T: Serialize + for<'a> Deserialize<'a>>(event: &Event<T>
     }
 }
 
-pub async fn send_events<T: Serialize + for<'a> Deserialize<'a>>(events: &[&Event<T>]) -> Result<(), String> {
+pub async fn send_events<T: InngestEvent>(events: &[&Event<T>]) -> Result<(), String> {
     let client = reqwest::Client::new();
     let payload: Vec<Value> = events
         .iter()
