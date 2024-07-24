@@ -5,8 +5,7 @@ use axum::{
 use serde_json::Value;
 
 use crate::{
-    event::InngestEvent,
-    router::Handler,
+    event::InngestEvent, router::Handler
 };
 
 use super::RunQueryParams;
@@ -22,6 +21,8 @@ pub async fn invoke<T: InngestEvent>(
     Query(query): Query<RunQueryParams>,
     State(handler): State<Arc<Handler<T>>>,
     Json(body): Json<Value>,
-) -> Result<(), String> {
+) -> Result<(), String> { // TODO: update result types?
     handler.run(query, &body)
+        .map(|_| ())
+        .map_err(|err| format!("{:?}", err))
 }

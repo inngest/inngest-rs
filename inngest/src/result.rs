@@ -1,17 +1,16 @@
-use std::{
-    error::Error,
-    fmt::{Debug, Display},
-};
+use std::fmt::{Debug, Display};
 
-use serde::Serialize;
+#[derive(Debug)]
+pub enum Error {
+    Basic(String),
+    RetryAt(RetryAfterError),
+    NoRetry(NonRetriableError),
+}
 
-#[derive(Serialize)]
-pub enum Result<T, E>
-where
-    E: Error,
-{
-    Ok(T),
-    Err(E),
+pub struct StepError {
+    pub name: String,
+    pub message: String,
+    pub stack: Option<String>,
 }
 
 pub struct RetryAfterError {
