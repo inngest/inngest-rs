@@ -1,6 +1,7 @@
 pub mod error;
 pub mod event;
 pub mod function;
+pub mod result;
 pub mod router;
 pub mod sdk;
 
