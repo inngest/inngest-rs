@@ -1,4 +1,18 @@
-use std::fmt::{write, Debug, Display};
+use std::{
+    error::Error,
+    fmt::{Debug, Display},
+};
+
+use serde::Serialize;
+
+#[derive(Serialize)]
+pub enum Result<T, E>
+where
+    E: Error,
+{
+    Ok(T),
+    Err(E),
+}
 
 pub struct RetryAfterError {
     pub message: String,
