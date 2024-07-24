@@ -1,5 +1,6 @@
 pub mod event;
 pub mod function;
+pub mod inngest;
 pub mod result;
 pub mod router;
 pub mod sdk;
