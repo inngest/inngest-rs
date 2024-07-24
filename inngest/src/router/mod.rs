@@ -83,14 +83,10 @@ where
     }
 
     // run the specified function
-    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<(), Error> {
+    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<Value, Error> {
         match self.funcs.iter().find(|f| f.slug() == query.fn_id) {
             None => Err(Error::Basic(format!("no function registered as ID: {}", query.fn_id))),
             Some(func) => {
-                println!("Slug: {}", func.slug());
-                println!("Trigger: {:?}", func.trigger());
-                println!("Event: {:?}", func.event(&body["event"]));
-
                 match func.event(&body["event"]) {
                     None => Err(Error::Basic("failed to parse event".to_string())),
                     Some(evt) => (func.func)(Input {
@@ -102,7 +98,6 @@ where
                             step_id: String::new(),
                         },
                     })
-                    .map(|_res| ()),
                 }
             }
         }

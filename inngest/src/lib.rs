@@ -1,4 +1,3 @@
-pub mod error;
 pub mod event;
 pub mod function;
 pub mod result;
