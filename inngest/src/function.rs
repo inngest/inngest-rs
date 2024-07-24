@@ -1,8 +1,11 @@
-use crate::event::{Event, InngestEvent};
+use crate::{
+    event::{Event, InngestEvent},
+    result::Error,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use slug::slugify;
-use std::{any::Any, collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug};
 
 #[derive(Deserialize)]
 pub struct Input<T>
@@ -41,7 +44,7 @@ impl Default for FunctionOps {
 pub struct ServableFn<T: InngestEvent> {
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: fn(Input<T>) -> Result<Box<dyn Any>, String>,
+    pub func: fn(Input<T>) -> Result<Value, Error>,
 }
 
 impl<T: InngestEvent> Debug for ServableFn<T> {
@@ -114,7 +117,7 @@ pub enum Trigger {
 pub fn create_function<T: InngestEvent>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: fn(Input<T>) -> Result<Box<dyn Any>, String>,
+    func: fn(Input<T>) -> Result<Value, Error>,
 ) -> ServableFn<T> {
     ServableFn {
         opts,

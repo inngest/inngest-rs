@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use crate::{
     event::InngestEvent,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
+    result::Error,
     sdk::Request,
 };
 use serde::{Deserialize, Serialize};
@@ -85,28 +86,24 @@ where
     }
 
     // run the specified function
-    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<(), String> {
+    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<Value, Error> {
         match self.funcs.iter().find(|f| f.slug() == query.fn_id) {
-            None => Err(format!("no function registered as ID: {}", query.fn_id)),
-            Some(func) => {
-                println!("Slug: {}", func.slug());
-                println!("Trigger: {:?}", func.trigger());
-                println!("Event: {:?}", func.event(&body["event"]));
-
-                match func.event(&body["event"]) {
-                    None => Err("failed to parse event".to_string()),
-                    Some(evt) => (func.func)(Input {
-                        event: evt,
-                        events: vec![],
-                        ctx: InputCtx {
-                            fn_id: String::new(),
-                            run_id: String::new(),
-                            step_id: String::new(),
-                        },
-                    })
-                    .map(|_res| ()),
-                }
-            }
+            None => Err(Error::Basic(format!(
+                "no function registered as ID: {}",
+                query.fn_id
+            ))),
+            Some(func) => match func.event(&body["event"]) {
+                None => Err(Error::Basic("failed to parse event".to_string())),
+                Some(evt) => (func.func)(Input {
+                    event: evt,
+                    events: vec![],
+                    ctx: InputCtx {
+                        fn_id: String::new(),
+                        run_id: String::new(),
+                        step_id: String::new(),
+                    },
+                }),
+            },
         }
     }
 }

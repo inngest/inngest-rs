@@ -7,6 +7,7 @@ use inngest::{
     router::{axum as inngest_axum, Handler},
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -53,9 +54,8 @@ fn dummy_fn() -> ServableFn<TestData> {
 
             let evt = input.event;
             println!("Event: {}", evt.name);
-            // println!("Data: {:?}", evt.data);
 
-            Ok(Box::new("test result".to_string()))
+            Ok(json!("test result"))
         },
     )
 }
@@ -75,9 +75,8 @@ fn hello_fn() -> ServableFn<TestData> {
 
             let evt = input.event;
             println!("Event: {}", evt.name);
-            // println!("Data: {:?}", evt.data());
 
-            Ok(Box::new("test hello".to_string()))
+            Ok(json!("test hello"))
         },
     )
 }
