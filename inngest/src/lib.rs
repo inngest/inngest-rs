@@ -10,12 +10,12 @@ use result::Error;
 
 #[derive(Clone)]
 pub struct Inngest {
-    pub app_id: String,
-    pub api_base_url: Option<String>,
-    pub event_api_base_url: Option<String>,
-    pub event_key: Option<String>,
-    pub env: Option<String>,
-    pub is_dev: Option<bool>,
+    app_id: String,
+    api_base_url: Option<String>,
+    event_api_base_url: Option<String>,
+    event_key: Option<String>,
+    env: Option<String>,
+    is_dev: Option<bool>,
     http: reqwest::Client,
 }
 
