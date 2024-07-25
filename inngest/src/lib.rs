@@ -32,6 +32,31 @@ impl Inngest {
         }
     }
 
+    pub fn api_base_url(mut self, url: &str) -> Self {
+        self.api_base_url = Some(url.to_string());
+        self
+    }
+
+    pub fn event_api_base_url(mut self, url: &str) -> Self {
+        self.event_api_base_url = Some(url.to_string());
+        self
+    }
+
+    pub fn event_key(mut self, key: &str) -> Self {
+        self.event_key = Some(key.to_string());
+        self
+    }
+
+    pub fn env(mut self, e: &str) -> Self {
+        self.env = Some(e.to_string());
+        self
+    }
+
+    pub fn is_dev(mut self, dev: bool) -> Self {
+        self.is_dev = Some(dev);
+        self
+    }
+
     // TODO: make the result return something properly
     pub async fn send_event<T: InngestEvent>(&self, evt: &Event<T>) -> Result<(), Error> {
         self.http

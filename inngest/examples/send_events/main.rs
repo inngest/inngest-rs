@@ -15,7 +15,7 @@ struct TestEvent<T> {
 
 #[tokio::main]
 async fn main() {
-    let client = Inngest::new("send-events");
+    let client = Inngest::new("send-events").event_key("yolo");
     let evt = Event::<Data>::new("test/event", Data { foo: 1, bar: 2 });
 
     let evt2 = Event::<Data>::new("test/yolo", Data { foo: 10, bar: 20 });
