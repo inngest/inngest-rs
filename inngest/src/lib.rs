@@ -21,6 +21,8 @@ pub struct Inngest {
 
 impl Inngest {
     pub fn new(app_id: &str) -> Self {
+        // TODO: initialize variable values here using environment variables
+
         Inngest {
             app_id: app_id.to_string(),
             api_base_url: None,
