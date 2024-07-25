@@ -32,7 +32,7 @@ impl Inngest {
         // https://www.inngest.com/docs/sdk/environment-variables#inngest-dev
         let is_dev = match env::var("INNGEST_DEV") {
             Ok(_) => Some(true),
-            Err(_) => None
+            Err(_) => None,
         };
 
         Inngest {

@@ -1,6 +1,6 @@
 use crate::{
     event::InngestEvent,
-    handler::{Handler, RunQueryParams}
+    handler::{Handler, RunQueryParams},
 };
 
 use axum::{

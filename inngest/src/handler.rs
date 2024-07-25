@@ -4,10 +4,11 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    Inngest,
     event::InngestEvent,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
-    result::Error, sdk::Request,
+    result::Error,
+    sdk::Request,
+    Inngest,
 };
 
 pub struct Handler<T: InngestEvent> {
@@ -35,28 +36,35 @@ impl<T: InngestEvent> Handler<T> {
     }
 
     pub async fn sync(&self, framework: &str) -> Result<(), String> {
-        let functions: Vec<Function> = self.funcs.iter().map(|(_, f)| {
-            let mut steps = HashMap::new();
-            steps.insert(
-                "step".to_string(),
-                Step {
-                    id: "step".to_string(),
-                    name: "step".to_string(),
-                    runtime: StepRuntime {
-                        url: format!("http://127.0.0.1:3000/api/inngest?fnId={}&step=step", f.slug()),
-                        method: "http".to_string(),
+        let functions: Vec<Function> = self
+            .funcs
+            .iter()
+            .map(|(_, f)| {
+                let mut steps = HashMap::new();
+                steps.insert(
+                    "step".to_string(),
+                    Step {
+                        id: "step".to_string(),
+                        name: "step".to_string(),
+                        runtime: StepRuntime {
+                            url: format!(
+                                "http://127.0.0.1:3000/api/inngest?fnId={}&step=step",
+                                f.slug()
+                            ),
+                            method: "http".to_string(),
+                        },
+                        retries: StepRetry { attempts: 3 },
                     },
-                    retries: StepRetry { attempts: 3 }
-                }
-            );
+                );
 
-            Function {
-                id: f.slug(),
-                name: f.slug(),
-                triggers: vec![f.trigger()],
-                steps
-            }
-        }).collect();
+                Function {
+                    id: f.slug(),
+                    name: f.slug(),
+                    triggers: vec![f.trigger()],
+                    steps,
+                }
+            })
+            .collect();
 
         let req = Request {
             framework: framework.to_string(),
@@ -65,7 +73,7 @@ impl<T: InngestEvent> Handler<T> {
             ..Default::default()
         };
 
-      reqwest::Client::new()
+        reqwest::Client::new()
             .post("http://127.0.0.1:8288/fn/register")
             .json(&req)
             .send()
