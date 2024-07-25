@@ -5,6 +5,9 @@ pub mod result;
 pub mod sdk;
 pub mod serve;
 
+use event::{Event, InngestEvent};
+use result::Error;
+
 #[derive(Clone)]
 pub struct Inngest {
     pub app_id: String,
@@ -13,6 +16,7 @@ pub struct Inngest {
     pub event_key: Option<String>,
     pub env: Option<String>,
     pub is_dev: Option<bool>,
+    http: reqwest::Client,
 }
 
 impl Inngest {
@@ -24,6 +28,29 @@ impl Inngest {
             event_key: None,
             env: None,
             is_dev: None,
+            http: reqwest::Client::new(),
         }
+    }
+
+    // TODO: make the result return something properly
+    pub async fn send_event<T: InngestEvent>(&self, evt: &Event<T>) -> Result<(), Error> {
+        self.http
+            .post("http://127.0.0.1:8288/e/test")
+            .json(&evt)
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|err| Error::Basic(err.to_string()))
+    }
+
+    // TODO: make the result return something properly
+    pub async fn send_events<T: InngestEvent>(&self, evts: &[&Event<T>]) -> Result<(), Error> {
+        self.http
+            .post("http://127.0.0.1:8288/e/test")
+            .json(&evts)
+            .send()
+            .await
+            .map(|_| ())
+            .map_err(|err| Error::Basic(err.to_string()))
     }
 }
