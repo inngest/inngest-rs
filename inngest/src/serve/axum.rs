@@ -10,6 +10,9 @@ use axum::{
 use serde_json::Value;
 use std::sync::Arc;
 
+// TODO:
+// provide a macro for simple import into Axum routes
+
 pub async fn register<T: InngestEvent>(
     State(handler): State<Arc<Handler<T>>>,
 ) -> Result<(), String> {
