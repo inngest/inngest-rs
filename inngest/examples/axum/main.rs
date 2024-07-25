@@ -3,10 +3,10 @@ use axum::{
     Router,
 };
 use inngest::{
+    Inngest,
+    serve,
     function::{create_function, FunctionOps, Input, ServableFn, Trigger},
     handler::Handler,
-    inngest::Inngest,
-    serve
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;

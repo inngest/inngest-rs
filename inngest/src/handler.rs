@@ -4,9 +4,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
+    Inngest,
     event::InngestEvent,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
-    inngest::Inngest,
     result::Error, sdk::Request,
 };
 
