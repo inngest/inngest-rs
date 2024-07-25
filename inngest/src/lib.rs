@@ -5,6 +5,8 @@ pub mod result;
 pub mod sdk;
 pub mod serve;
 
+use std::env;
+
 use event::{Event, InngestEvent};
 use result::Error;
 
@@ -21,16 +23,36 @@ pub struct Inngest {
 
 impl Inngest {
     pub fn new(app_id: &str) -> Self {
-        // TODO: initialize variable values here using environment variables
+        // initialize variable values here using environment variables
+        let api_base_url = Self::read_env("INNGEST_API_BASE_URL");
+        let event_api_base_url = Self::read_env("INNGEST_EVENT_API_BASE_URL");
+        let event_key = Self::read_env("INNGEST_EVENT_KEY");
+        let env = Self::read_env("INNGEST_ENV");
+        // TODO: allow updating dev server url here
+        // https://www.inngest.com/docs/sdk/environment-variables#inngest-dev
+        let is_dev = match env::var("INNGEST_DEV") {
+            Ok(_) => Some(true),
+            Err(_) => None
+        };
 
         Inngest {
             app_id: app_id.to_string(),
-            api_base_url: None,
-            event_api_base_url: None,
-            event_key: None,
-            env: None,
-            is_dev: None,
+            api_base_url,
+            event_api_base_url,
+            event_key,
+            env,
+            is_dev,
             http: reqwest::Client::new(),
+        }
+    }
+
+    fn read_env(key: &str) -> Option<String> {
+        match env::var(key) {
+            Ok(str) => Some(str),
+            Err(err) => {
+                println!("Error reading environment variable {}: {}", key, err);
+                None
+            }
         }
     }
 
