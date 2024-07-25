@@ -3,7 +3,10 @@ use axum::{
     Router,
 };
 use inngest::{
-    function::{create_function, FunctionOps, Input, ServableFn, Trigger}, handler::Handler, inngest::Inngest, router::axum as inngest_axum
+    function::{create_function, FunctionOps, Input, ServableFn, Trigger},
+    handler::Handler,
+    inngest::Inngest,
+    serve
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -22,7 +25,7 @@ async fn main() {
         .route("/", get(|| async { "Hello, World!" }))
         .route(
             "/api/inngest",
-            put(inngest_axum::register).post(inngest_axum::invoke),
+            put(serve::axum::register).post(serve::axum::invoke),
         )
         .with_state(inngest_state);
 

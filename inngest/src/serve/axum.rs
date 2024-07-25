@@ -1,4 +1,7 @@
-use crate::{event::InngestEvent, handler::{Handler, RunQueryParams}};
+use crate::{
+    event::InngestEvent,
+    handler::{Handler, RunQueryParams}
+};
 
 use axum::{
     extract::{Query, State},
