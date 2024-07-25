@@ -3,8 +3,7 @@ use axum::{
     Router,
 };
 use inngest::{
-    function::{create_function, FunctionOps, Input, ServableFn, Trigger},
-    router::{axum as inngest_axum, Handler},
+    function::{create_function, FunctionOps, Input, ServableFn, Trigger}, handler::Handler, inngest::Inngest, router::axum as inngest_axum
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -12,7 +11,8 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-    let mut inngest_handler = Handler::new();
+    let client = Inngest::new("rust-dev".to_string());
+    let mut inngest_handler = Handler::new(client);
     inngest_handler.register_fn(dummy_fn());
     inngest_handler.register_fn(hello_fn());
 

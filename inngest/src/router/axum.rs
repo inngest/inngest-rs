@@ -1,12 +1,10 @@
+use crate::{event::InngestEvent, handler::{Handler, RunQueryParams}};
+
 use axum::{
     extract::{Query, State},
     Json,
 };
 use serde_json::Value;
-
-use crate::{event::InngestEvent, router::Handler};
-
-use super::RunQueryParams;
 use std::sync::Arc;
 
 pub async fn register<T: InngestEvent>(

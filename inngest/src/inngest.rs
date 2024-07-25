@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct Inngest {
     pub app_id: String,
     pub api_base_url: Option<String>,
