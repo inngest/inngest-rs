@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-    let client = Inngest::new("rust-dev".to_string());
+    let client = Inngest::new("rust-dev");
     let mut inngest_handler = Handler::new(client);
     inngest_handler.register_fn(dummy_fn());
     inngest_handler.register_fn(hello_fn());

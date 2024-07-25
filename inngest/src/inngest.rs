@@ -9,9 +9,9 @@ pub struct Inngest {
 }
 
 impl Inngest {
-    pub fn new(app_id: String) -> Self {
+    pub fn new(app_id: &str) -> Self {
         Inngest {
-            app_id,
+            app_id: app_id.to_string(),
             api_base_url: None,
             event_api_base_url: None,
             event_key: None,
