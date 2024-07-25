@@ -1,50 +1,45 @@
-pub mod axum;
-
 use std::collections::HashMap;
+
+use serde::Deserialize;
+use serde_json::Value;
 
 use crate::{
     event::InngestEvent,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
     result::Error,
     sdk::Request,
+    Inngest,
 };
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 pub struct Handler<T: InngestEvent> {
-    app_name: String,
-    funcs: Vec<ServableFn<T>>,
+    inngest: Inngest,
+    funcs: HashMap<String, ServableFn<T>>,
 }
 
-impl<T: InngestEvent> Handler<T>
-where
-    T: Serialize + for<'a> Deserialize<'a> + 'static,
-{
-    pub fn new() -> Self {
+#[derive(Deserialize)]
+pub struct RunQueryParams {
+    #[serde(rename = "fnId")]
+    fn_id: String,
+}
+
+impl<T: InngestEvent> Handler<T> {
+    pub fn new(client: Inngest) -> Self {
         Handler {
-            app_name: "RustDev".to_string(),
-            funcs: vec![],
+            inngest: client.clone(),
+            funcs: HashMap::new(),
         }
     }
 
-    pub fn set_name(&mut self, name: &str) {
-        self.app_name = name.to_string()
-    }
-
     pub fn register_fn(&mut self, func: ServableFn<T>) {
-        self.funcs.push(func);
+        let fn_id = func.opts.id.clone();
+        self.funcs.insert(fn_id, func);
     }
 
-    // pub fn register_fns(&mut self, funcs: &[ServableFunction]) {
-    //     self.funcs.extend_from_slice(funcs)
-    // }
-
-    // sync the registered functions
-    pub async fn sync(&self, framwork: &str) -> Result<(), String> {
+    pub async fn sync(&self, framework: &str) -> Result<(), String> {
         let functions: Vec<Function> = self
             .funcs
             .iter()
-            .map(|f| {
+            .map(|(_, f)| {
                 let mut steps = HashMap::new();
                 steps.insert(
                     "step".to_string(),
@@ -52,8 +47,10 @@ where
                         id: "step".to_string(),
                         name: "step".to_string(),
                         runtime: StepRuntime {
-                            url: "http://127.0.0.1:3000/api/inngest?fnId=dummy-func&step=step"
-                                .to_string(),
+                            url: format!(
+                                "http://127.0.0.1:3000/api/inngest?fnId={}&step=step",
+                                f.slug()
+                            ),
                             method: "http".to_string(),
                         },
                         retries: StepRetry { attempts: 3 },
@@ -70,7 +67,7 @@ where
             .collect();
 
         let req = Request {
-            framework: framwork.to_string(),
+            framework: framework.to_string(),
             functions,
             url: "http://127.0.0.1:3000/api/inngest".to_string(),
             ..Default::default()
@@ -81,16 +78,15 @@ where
             .json(&req)
             .send()
             .await
-            .map(|_res| ())
+            .map(|_| ())
             .map_err(|_err| "error registering".to_string())
     }
 
-    // run the specified function
     pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<Value, Error> {
-        match self.funcs.iter().find(|f| f.slug() == query.fn_id) {
+        match self.funcs.get(&query.fn_id) {
             None => Err(Error::Basic(format!(
                 "no function registered as ID: {}",
-                query.fn_id
+                &query.fn_id
             ))),
             Some(func) => match func.event(&body["event"]) {
                 None => Err(Error::Basic("failed to parse event".to_string())),
@@ -98,7 +94,7 @@ where
                     event: evt,
                     events: vec![],
                     ctx: InputCtx {
-                        fn_id: String::new(),
+                        fn_id: query.fn_id.clone(),
                         run_id: String::new(),
                         step_id: String::new(),
                     },
@@ -106,10 +102,4 @@ where
             },
         }
     }
-}
-
-#[derive(Deserialize)]
-pub struct RunQueryParams {
-    #[serde(rename = "fnId")]
-    fn_id: String,
 }

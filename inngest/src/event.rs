@@ -1,7 +1,5 @@
-use std::fmt::Debug;
-
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use std::fmt::Debug;
 
 pub trait InngestEvent: Serialize + for<'a> Deserialize<'a> + Debug + 'static {}
 impl<T: Serialize + for<'a> Deserialize<'a> + Debug + 'static> InngestEvent for T {}
@@ -32,50 +30,18 @@ where
         }
     }
 
-    pub fn id(&mut self, id: &str) -> &mut Self {
+    pub fn id(mut self, id: &str) -> Self {
         self.id = Some(id.to_string());
         self
     }
 
-    pub fn timestamp(&mut self, ts: i64) -> &mut Self {
+    pub fn timestamp(mut self, ts: i64) -> Self {
         self.timestamp = Some(ts);
         self
     }
 
-    pub fn version(&mut self, v: &str) -> &mut Self {
+    pub fn version(mut self, v: &str) -> Self {
         self.version = Some(v.to_string());
         self
-    }
-}
-
-pub async fn send_event<T: InngestEvent>(event: &Event<T>) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let payload = json!(event);
-
-    // TODO: make the result return something properly
-    match client
-        .post("http://127.0.0.1:8288/e/test")
-        .json(&payload)
-        .send()
-        .await
-    {
-        Ok(_) => Ok(()),
-        Err(_) => Err("failed to send event".to_string()),
-    }
-}
-
-pub async fn send_events<T: InngestEvent>(events: &[&Event<T>]) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let payload: Vec<Value> = events.iter().map(|evt| json!(evt)).collect();
-
-    // TODO: make the result return something properly
-    match client
-        .post("http://127.0.0.1:8288/e/test")
-        .json(&payload)
-        .send()
-        .await
-    {
-        Ok(_) => Ok(()),
-        Err(_) => Err("failed to send events".to_string()),
     }
 }
