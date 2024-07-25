@@ -30,17 +30,17 @@ where
         }
     }
 
-    pub fn id(&mut self, id: &str) -> &mut Self {
+    pub fn id(mut self, id: &str) -> Self {
         self.id = Some(id.to_string());
         self
     }
 
-    pub fn timestamp(&mut self, ts: i64) -> &mut Self {
+    pub fn timestamp(mut self, ts: i64) -> Self {
         self.timestamp = Some(ts);
         self
     }
 
-    pub fn version(&mut self, v: &str) -> &mut Self {
+    pub fn version(mut self, v: &str) -> Self {
         self.version = Some(v.to_string());
         self
     }
