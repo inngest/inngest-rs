@@ -1,5 +1,14 @@
 use std::fmt::{Debug, Display};
 
+use serde::Serialize;
+use serde_json::Value;
+
+#[derive(Serialize)]
+pub(crate) struct SdkResponse {
+    pub status: u8,
+    pub body: Value,
+}
+
 #[derive(Debug)]
 pub enum Error {
     Basic(String),
