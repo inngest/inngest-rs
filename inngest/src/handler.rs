@@ -31,8 +31,7 @@ impl<T: InngestEvent> Handler<T> {
     }
 
     pub fn register_fn(&mut self, func: ServableFn<T>) {
-        let fn_id = func.opts.id.clone();
-        self.funcs.insert(fn_id, func);
+        self.funcs.insert(func.slug(), func);
     }
 
     pub async fn sync(&self, framework: &str) -> Result<(), String> {
