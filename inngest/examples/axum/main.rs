@@ -57,7 +57,7 @@ fn dummy_fn() -> ServableFn<TestData> {
             let evt = input.event;
             println!("Event: {}", evt.name);
 
-            Ok(json!("test result"))
+            Ok(json!({ "dummy": true }))
         },
     )
 }

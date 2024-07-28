@@ -13,8 +13,8 @@ use result::Error;
 #[derive(Clone)]
 pub struct Inngest {
     app_id: String,
-    api_base_url: Option<String>,
-    event_api_base_url: Option<String>,
+    api_origin: Option<String>,
+    event_api_origin: Option<String>,
     event_key: Option<String>,
     env: Option<String>,
     is_dev: Option<bool>,
@@ -24,8 +24,8 @@ pub struct Inngest {
 impl Inngest {
     pub fn new(app_id: &str) -> Self {
         // initialize variable values here using environment variables
-        let api_base_url = Self::read_env("INNGEST_API_BASE_URL");
-        let event_api_base_url = Self::read_env("INNGEST_EVENT_API_BASE_URL");
+        let api_origin = Self::read_env("INNGEST_API_ORIGIN");
+        let event_api_origin = Self::read_env("INNGEST_EVENT_API_ORIGIN");
         let event_key = Self::read_env("INNGEST_EVENT_KEY");
         let env = Self::read_env("INNGEST_ENV");
         // TODO: allow updating dev server url here
@@ -37,8 +37,8 @@ impl Inngest {
 
         Inngest {
             app_id: app_id.to_string(),
-            api_base_url,
-            event_api_base_url,
+            api_origin,
+            event_api_origin,
             event_key,
             env,
             is_dev,
@@ -56,13 +56,13 @@ impl Inngest {
         }
     }
 
-    pub fn api_base_url(mut self, url: &str) -> Self {
-        self.api_base_url = Some(url.to_string());
+    pub fn api_origin(mut self, url: &str) -> Self {
+        self.api_origin = Some(url.to_string());
         self
     }
 
-    pub fn event_api_base_url(mut self, url: &str) -> Self {
-        self.event_api_base_url = Some(url.to_string());
+    pub fn event_api_origin(mut self, url: &str) -> Self {
+        self.event_api_origin = Some(url.to_string());
         self
     }
 

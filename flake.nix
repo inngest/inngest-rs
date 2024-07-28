@@ -21,6 +21,7 @@
             rustup
             rustfmt
             cargo
+            clippy
 
             # deps
             pkg-config

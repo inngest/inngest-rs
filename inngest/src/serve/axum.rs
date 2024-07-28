@@ -1,6 +1,7 @@
 use crate::{
     event::InngestEvent,
     handler::{Handler, RunQueryParams},
+    result::{Error, SdkResponse},
 };
 
 use axum::{
@@ -23,10 +24,8 @@ pub async fn invoke<T: InngestEvent>(
     Query(query): Query<RunQueryParams>,
     State(handler): State<Arc<Handler<T>>>,
     Json(body): Json<Value>,
-) -> Result<(), String> {
-    // TODO: update result types?
+) -> Result<SdkResponse, Error> {
     handler
         .run(query, &body)
-        .map(|_| ())
-        .map_err(|err| format!("{:?}", err))
+        .map_err(|err| Error::Basic(format!("{:?}", err)))
 }
