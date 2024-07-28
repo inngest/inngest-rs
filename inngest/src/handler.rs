@@ -102,7 +102,7 @@ impl<T: InngestEvent> Handler<T> {
 
                     res.map(|v| SdkResponse {
                         status: 200,
-                        body: v
+                        body: v,
                     })
                 }
             },

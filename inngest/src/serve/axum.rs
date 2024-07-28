@@ -1,6 +1,7 @@
 use crate::{
     event::InngestEvent,
-    handler::{Handler, RunQueryParams}, result::{Error, SdkResponse},
+    handler::{Handler, RunQueryParams},
+    result::{Error, SdkResponse},
 };
 
 use axum::{
