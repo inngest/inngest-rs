@@ -1,12 +1,22 @@
 use std::fmt::{Debug, Display};
 
+use axum::{http::StatusCode, response::IntoResponse, Json};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 #[derive(Serialize)]
-pub(crate) struct SdkResponse {
+pub struct SdkResponse {
     pub status: u8,
     pub body: Value,
+}
+
+impl IntoResponse for SdkResponse {
+    fn into_response(self) -> axum::response::Response {
+        match self.status {
+            200 => (StatusCode::OK, Json(self.body)).into_response(),
+            _ => (StatusCode::BAD_REQUEST, Json(json!("Unknown response"))).into_response(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -14,6 +24,16 @@ pub enum Error {
     Basic(String),
     RetryAt(RetryAfterError),
     NoRetry(NonRetriableError),
+}
+
+impl IntoResponse for Error {
+    fn into_response(self) -> axum::response::Response {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!("NOT IMPLEMENTED")),
+        )
+            .into_response()
+    }
 }
 
 pub struct StepError {

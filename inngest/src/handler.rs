@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::{
     event::InngestEvent,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
-    result::Error,
+    result::{Error, SdkResponse},
     sdk::Request,
     Inngest,
 };
@@ -81,7 +81,7 @@ impl<T: InngestEvent> Handler<T> {
             .map_err(|_err| "error registering".to_string())
     }
 
-    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<Value, Error> {
+    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, Error> {
         match self.funcs.get(&query.fn_id) {
             None => Err(Error::Basic(format!(
                 "no function registered as ID: {}",
@@ -89,15 +89,22 @@ impl<T: InngestEvent> Handler<T> {
             ))),
             Some(func) => match func.event(&body["event"]) {
                 None => Err(Error::Basic("failed to parse event".to_string())),
-                Some(evt) => (func.func)(Input {
-                    event: evt,
-                    events: vec![],
-                    ctx: InputCtx {
-                        fn_id: query.fn_id.clone(),
-                        run_id: String::new(),
-                        step_id: String::new(),
-                    },
-                }),
+                Some(evt) => {
+                    let res = (func.func)(Input {
+                        event: evt,
+                        events: vec![],
+                        ctx: InputCtx {
+                            fn_id: query.fn_id.clone(),
+                            run_id: String::new(),
+                            step_id: String::new(),
+                        },
+                    });
+
+                    res.map(|v| SdkResponse {
+                        status: 200,
+                        body: v
+                    })
+                }
             },
         }
     }
