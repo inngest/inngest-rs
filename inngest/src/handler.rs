@@ -13,6 +13,10 @@ use crate::{
 
 pub struct Handler<T: InngestEvent> {
     inngest: Inngest,
+    signing_key: Option<String>,
+    // TODO: signing_key_fallback
+    serve_origin: Option<String>,
+    serve_path: Option<String>,
     funcs: HashMap<String, ServableFn<T>>,
 }
 
@@ -25,6 +29,9 @@ pub struct RunQueryParams {
 impl<T: InngestEvent> Handler<T> {
     pub fn new(client: Inngest) -> Self {
         Handler {
+            signing_key: None,
+            serve_origin: None,
+            serve_path: None,
             inngest: client.clone(),
             funcs: HashMap::new(),
         }
