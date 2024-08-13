@@ -9,7 +9,7 @@ use crate::{
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
     result::{Error, SdkResponse},
     sdk::Request,
-    Inngest
+    Inngest,
 };
 
 pub struct Handler<T: InngestEvent> {
@@ -46,7 +46,7 @@ impl<T: InngestEvent> Handler<T> {
         self.funcs.insert(func.slug(), func);
     }
 
-    pub async fn sync(&self, framework: &str) -> Result<(), String> {
+    pub async fn sync(&self, _headers: &HashMap<String, String>, framework: &str) -> Result<(), String> {
         let functions: Vec<Function> = self
             .funcs
             .iter()
@@ -78,6 +78,7 @@ impl<T: InngestEvent> Handler<T> {
             .collect();
 
         let req = Request {
+            app_name: self.inngest.app_id.clone(),
             framework: framework.to_string(),
             functions,
             url: "http://127.0.0.1:3000/api/inngest".to_string(),
