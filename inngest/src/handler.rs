@@ -4,11 +4,12 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
+    config::Config,
     event::InngestEvent,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
     result::{Error, SdkResponse},
     sdk::Request,
-    Inngest,
+    Inngest
 };
 
 pub struct Handler<T: InngestEvent> {
@@ -28,10 +29,14 @@ pub struct RunQueryParams {
 
 impl<T: InngestEvent> Handler<T> {
     pub fn new(client: Inngest) -> Self {
+        let signing_key = Config::signing_key();
+        let serve_origin = Config::serve_origin();
+        let serve_path = Config::serve_path();
+
         Handler {
-            signing_key: None,
-            serve_origin: None,
-            serve_path: None,
+            signing_key,
+            serve_origin,
+            serve_path,
             inngest: client.clone(),
             funcs: HashMap::new(),
         }
