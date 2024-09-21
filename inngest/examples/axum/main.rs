@@ -51,10 +51,10 @@ fn dummy_fn() -> ServableFn<TestData> {
             event: "test/event".to_string(),
             expression: None,
         },
-        |input: Input<TestData>| {
+        |input: &Input<TestData>| {
             println!("In dummy function");
 
-            let evt = input.event;
+            let evt = &input.event;
             println!("Event: {}", evt.name);
 
             Ok(json!({ "dummy": true }))
@@ -72,10 +72,10 @@ fn hello_fn() -> ServableFn<TestData> {
             event: "test/hello".to_string(),
             expression: None,
         },
-        |input: Input<TestData>| {
+        |input: &Input<TestData>| {
             println!("In hello function");
 
-            let evt = input.event;
+            let evt = &input.event;
             println!("Event: {}", evt.name);
 
             Ok(json!("test hello"))

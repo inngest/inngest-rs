@@ -110,7 +110,7 @@ impl<T: InngestEvent> Handler<T> {
             Some(func) => match func.event(&body["event"]) {
                 None => Err(Error::Basic("failed to parse event".to_string())),
                 Some(evt) => {
-                    let res = (func.func)(Input {
+                    let res = (func.func)(&Input {
                         event: evt,
                         events: vec![],
                         ctx: InputCtx {

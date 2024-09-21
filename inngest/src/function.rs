@@ -7,6 +7,9 @@ use serde_json::Value;
 use slug::slugify;
 use std::{collections::HashMap, fmt::Debug};
 
+// NOTE: should T have Copy trait too?
+// so it can do something like `input.event` without moving.
+// but the benefit vs effort might be too much for users.
 #[derive(Deserialize)]
 pub struct Input<T>
 where
@@ -44,7 +47,7 @@ impl Default for FunctionOps {
 pub struct ServableFn<T: InngestEvent> {
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: fn(Input<T>) -> Result<Value, Error>,
+    pub func: fn(&Input<T>) -> Result<Value, Error>,
 }
 
 impl<T: InngestEvent> Debug for ServableFn<T> {
@@ -117,7 +120,7 @@ pub enum Trigger {
 pub fn create_function<T: InngestEvent>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: fn(Input<T>) -> Result<Value, Error>,
+    func: fn(&Input<T>) -> Result<Value, Error>,
 ) -> ServableFn<T> {
     ServableFn {
         opts,
