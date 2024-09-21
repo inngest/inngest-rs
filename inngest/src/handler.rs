@@ -63,6 +63,7 @@ impl<T: InngestEvent> Handler<T> {
                         name: "step".to_string(),
                         runtime: StepRuntime {
                             url: format!(
+                                // TODO: fix the URL
                                 "http://127.0.0.1:3000/api/inngest?fnId={}&step=step",
                                 f.slug()
                             ),
@@ -85,11 +86,13 @@ impl<T: InngestEvent> Handler<T> {
             app_name: self.inngest.app_id.clone(),
             framework: framework.to_string(),
             functions,
+            // TODO: fix the URL
             url: "http://127.0.0.1:3000/api/inngest".to_string(),
             ..Default::default()
         };
 
         reqwest::Client::new()
+            // TODO: fix the URL
             .post("http://127.0.0.1:8288/fn/register")
             .json(&req)
             .send()
