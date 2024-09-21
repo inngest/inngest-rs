@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
+    config::Config,
     event::InngestEvent,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
     result::{Error, SdkResponse},
@@ -13,6 +14,10 @@ use crate::{
 
 pub struct Handler<T: InngestEvent> {
     inngest: Inngest,
+    signing_key: Option<String>,
+    // TODO: signing_key_fallback
+    serve_origin: Option<String>,
+    serve_path: Option<String>,
     funcs: HashMap<String, ServableFn<T>>,
 }
 
@@ -24,7 +29,14 @@ pub struct RunQueryParams {
 
 impl<T: InngestEvent> Handler<T> {
     pub fn new(client: Inngest) -> Self {
+        let signing_key = Config::signing_key();
+        let serve_origin = Config::serve_origin();
+        let serve_path = Config::serve_path();
+
         Handler {
+            signing_key,
+            serve_origin,
+            serve_path,
             inngest: client.clone(),
             funcs: HashMap::new(),
         }
@@ -34,7 +46,11 @@ impl<T: InngestEvent> Handler<T> {
         self.funcs.insert(func.slug(), func);
     }
 
-    pub async fn sync(&self, framework: &str) -> Result<(), String> {
+    pub async fn sync(
+        &self,
+        _headers: &HashMap<String, String>,
+        framework: &str,
+    ) -> Result<(), String> {
         let functions: Vec<Function> = self
             .funcs
             .iter()
@@ -66,6 +82,7 @@ impl<T: InngestEvent> Handler<T> {
             .collect();
 
         let req = Request {
+            app_name: self.inngest.app_id.clone(),
             framework: framework.to_string(),
             functions,
             url: "http://127.0.0.1:3000/api/inngest".to_string(),
