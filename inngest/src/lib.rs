@@ -1,10 +1,10 @@
+pub(crate) mod config;
 pub mod event;
 pub mod function;
 pub mod handler;
 pub mod result;
 pub mod sdk;
 pub mod serve;
-pub(crate) mod config;
 
 use config::Config;
 use event::{Event, InngestEvent};

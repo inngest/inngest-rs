@@ -10,6 +10,10 @@ test:
 lint:
 	cargo clippy
 
+.PHONY: fmt
+fmt:
+	cargo fmt
+
 .PHONY: inngest-dev
 inngest-dev:
 	inngest-cli dev -u http://127.0.0.1:3000/api/inngest

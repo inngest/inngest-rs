@@ -46,7 +46,11 @@ impl<T: InngestEvent> Handler<T> {
         self.funcs.insert(func.slug(), func);
     }
 
-    pub async fn sync(&self, _headers: &HashMap<String, String>, framework: &str) -> Result<(), String> {
+    pub async fn sync(
+        &self,
+        _headers: &HashMap<String, String>,
+        framework: &str,
+    ) -> Result<(), String> {
         let functions: Vec<Function> = self
             .funcs
             .iter()
