@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
+use inngest_macros::InngestEvent;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
     config::Config,
-    event::InngestEvent,
+    event::{Event, InngestEvent},
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
     result::{Error, SdkResponse},
     sdk::Request,
@@ -102,6 +103,18 @@ impl<T: InngestEvent> Handler<T> {
     }
 
     pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, Error> {
+        let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
+            Ok(res) => res,
+            Err(err) => {
+                let msg = Error::Basic(format!("error parsing run request: {}", err));
+                return Err(msg);
+            },
+        };
+        // TODO: retrieve data from API on flag
+        if data.use_api {
+        }
+
+        // find the specified function
         let Some(func) = self.funcs.get(&query.fn_id) else {
             return Err(Error::Basic(format!(
                 "no function registered as ID: {}",
@@ -109,20 +122,17 @@ impl<T: InngestEvent> Handler<T> {
             )));
         };
 
-        let Some(input) = Input::from_json(body) else {
-            return Err(Error::Basic("failed to parse input body".to_string()));
+        let input = Input {
+            event: data.event,
+            events: data.events,
+            ctx: InputCtx {
+                fn_id: query.fn_id.clone(),
+                run_id: data.ctx.run_id.clone(),
+                step_id: "step".to_string(),
+            },
         };
 
-        // Input {
-        //     event: evt,
-        //     events: vec![],
-        //     ctx: InputCtx {
-        //         fn_id: query.fn_id.clone(),
-        //         run_id: String::new(),
-        //         step_id: String::new(),
-        //     },
-        // }
-
+        // run the function
         let res = (func.func)(&input);
 
         res.map(|v| SdkResponse {
@@ -130,4 +140,32 @@ impl<T: InngestEvent> Handler<T> {
             body: v,
         })
     }
+}
+
+#[derive(Deserialize)]
+struct RunRequestBody<T: 'static>
+{
+    ctx: RunRequestCtx,
+    event: Event<T>,
+    events: Vec<Event<T>>,
+    use_api: bool,
+    steps: HashMap<String, String>,
+    version: i32,
+}
+
+#[derive(Deserialize)]
+struct RunRequestCtx {
+    attempt: u8,
+    disable_immediate_execution: bool,
+    env: String,
+    fn_id: String,
+    run_id: String,
+    step_id: String,
+    stack: RunRequestCtxStack,
+}
+
+#[derive(Deserialize)]
+struct RunRequestCtxStack {
+    current: u32,
+    stack: Vec<String>
 }

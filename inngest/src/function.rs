@@ -10,17 +10,12 @@ use std::{collections::HashMap, fmt::Debug};
 // NOTE: should T have Copy trait too?
 // so it can do something like `input.event` without moving.
 // but the benefit vs effort might be too much for users.
-#[derive(Deserialize)]
-pub struct Input<T>
-where
-    T: 'static,
-{
+pub struct Input<T: 'static> {
     pub event: Event<T>,
     pub events: Vec<Event<T>>,
     pub ctx: InputCtx,
 }
 
-#[derive(Deserialize)]
 pub struct InputCtx {
     pub fn_id: String,
     pub run_id: String,
@@ -67,13 +62,6 @@ impl<T: InngestEvent> ServableFn<T> {
 
     pub fn trigger(&self) -> Trigger {
         self.trigger.clone()
-    }
-
-    pub fn event(&self, data: &Value) -> Option<Event<T>> {
-        match serde_json::from_value::<Event<T>>(data.clone()) {
-            Ok(val) => Some(val),
-            Err(_err) => None,
-        }
     }
 }
 
