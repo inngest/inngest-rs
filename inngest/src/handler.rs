@@ -102,30 +102,32 @@ impl<T: InngestEvent> Handler<T> {
     }
 
     pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, Error> {
-        match self.funcs.get(&query.fn_id) {
-            None => Err(Error::Basic(format!(
+        let Some(func) = self.funcs.get(&query.fn_id) else {
+            return Err(Error::Basic(format!(
                 "no function registered as ID: {}",
                 &query.fn_id
-            ))),
-            Some(func) => match func.event(&body["event"]) {
-                None => Err(Error::Basic("failed to parse event".to_string())),
-                Some(evt) => {
-                    let res = (func.func)(&Input {
-                        event: evt,
-                        events: vec![],
-                        ctx: InputCtx {
-                            fn_id: query.fn_id.clone(),
-                            run_id: String::new(),
-                            step_id: String::new(),
-                        },
-                    });
+            )));
+        };
 
-                    res.map(|v| SdkResponse {
-                        status: 200,
-                        body: v,
-                    })
-                }
-            },
-        }
+        let Some(input) = Input::from_json(body) else {
+            return Err(Error::Basic("failed to parse input body".to_string()));
+        };
+
+        // Input {
+        //     event: evt,
+        //     events: vec![],
+        //     ctx: InputCtx {
+        //         fn_id: query.fn_id.clone(),
+        //         run_id: String::new(),
+        //         step_id: String::new(),
+        //     },
+        // }
+
+        let res = (func.func)(&input);
+
+        res.map(|v| SdkResponse {
+            status: 200,
+            body: v,
+        })
     }
 }
