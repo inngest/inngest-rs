@@ -5,6 +5,12 @@ pub struct Step {
 }
 
 impl Step {
+    pub fn new() -> Self {
+        Step {
+            state: HashMap::new(),
+        }
+    }
+
     // TODO: run
 
     pub fn sleep(&self) {

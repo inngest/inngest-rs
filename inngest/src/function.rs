@@ -1,6 +1,7 @@
 use crate::{
     event::{Event, InngestEvent},
     result::Error,
+    step_tool::Step as StepTool,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -42,7 +43,7 @@ impl Default for FunctionOps {
 pub struct ServableFn<T: InngestEvent> {
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: fn(&Input<T>) -> Result<Value, Error>,
+    pub func: fn(&Input<T>, StepTool) -> Result<Value, Error>,
 }
 
 impl<T: InngestEvent> Debug for ServableFn<T> {
@@ -108,7 +109,7 @@ pub enum Trigger {
 pub fn create_function<T: InngestEvent>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: fn(&Input<T>) -> Result<Value, Error>,
+    func: fn(&Input<T>, StepTool) -> Result<Value, Error>,
 ) -> ServableFn<T> {
     ServableFn {
         opts,

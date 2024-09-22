@@ -10,7 +10,8 @@ use crate::{
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
     result::{Error, SdkResponse},
     sdk::Request,
-    Inngest,
+    step_tool::Step as StepTool,
+    Inngest
 };
 
 pub struct Handler<T: InngestEvent> {
@@ -132,8 +133,10 @@ impl<T: InngestEvent> Handler<T> {
             },
         };
 
+        let step_tool = StepTool::new();
+
         // run the function
-        let res = (func.func)(&input);
+        let res = (func.func)(&input, step_tool);
 
         res.map(|v| SdkResponse {
             status: 200,
