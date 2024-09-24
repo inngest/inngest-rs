@@ -7,19 +7,19 @@ use crate::{
     config::Config,
     event::{Event, InngestEvent},
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
-    result::{Error, FlowControlError, SdkResponse},
+    result::{FlowControlError, InggestError, SdkResponse},
     sdk::Request,
     step_tool::Step as StepTool,
     Inngest,
 };
 
-pub struct Handler<T: InngestEvent> {
+pub struct Handler<T: 'static, E> {
     inngest: Inngest,
     signing_key: Option<String>,
     // TODO: signing_key_fallback
     serve_origin: Option<String>,
     serve_path: Option<String>,
-    funcs: HashMap<String, ServableFn<T>>,
+    funcs: HashMap<String, ServableFn<T, E>>,
 }
 
 #[derive(Deserialize)]
@@ -28,7 +28,7 @@ pub struct RunQueryParams {
     fn_id: String,
 }
 
-impl<T: InngestEvent> Handler<T> {
+impl<T, E> Handler<T, E> {
     pub fn new(client: Inngest) -> Self {
         let signing_key = Config::signing_key();
         let serve_origin = Config::serve_origin();
@@ -43,7 +43,7 @@ impl<T: InngestEvent> Handler<T> {
         }
     }
 
-    pub fn register_fn(&mut self, func: ServableFn<T>) {
+    pub fn register_fn(&mut self, func: ServableFn<T, E>) {
         self.funcs.insert(func.slug(), func);
     }
 
@@ -102,12 +102,17 @@ impl<T: InngestEvent> Handler<T> {
             .map_err(|_err| "error registering".to_string())
     }
 
-    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, Error> {
+    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, InggestError>
+    where
+        T: for<'de> Deserialize<'de>,
+        E: Into<InggestError>,
+    {
+        println!("running function: {}, with body {:?}", &query.fn_id, body);
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
                 // TODO: need to surface this error better
-                let msg = Error::Basic(format!("error parsing run request: {}", err));
+                let msg = InggestError::Basic(format!("error parsing run request: {}", err));
                 return Err(msg);
             }
         };
@@ -117,7 +122,7 @@ impl<T: InngestEvent> Handler<T> {
 
         // find the specified function
         let Some(func) = self.funcs.get(&query.fn_id) else {
-            return Err(Error::Basic(format!(
+            return Err(InggestError::Basic(format!(
                 "no function registered as ID: {}",
                 &query.fn_id
             )));
@@ -142,13 +147,13 @@ impl<T: InngestEvent> Handler<T> {
                 body: v,
             }),
 
-            Err(err) => match err {
-                Error::Interupt(flow) => match flow {
+            Err(err) => match err.into() {
+                InggestError::Interrupt(flow) => match flow {
                     FlowControlError::StepGenerator => {
                         let body = match serde_json::to_value(&step_tool.genop) {
                             Ok(v) => v,
                             Err(err) => {
-                                return Err(Error::Basic(format!(
+                                return Err(InggestError::Basic(format!(
                                     "error serializing step response: {}",
                                     err
                                 )));
@@ -158,7 +163,7 @@ impl<T: InngestEvent> Handler<T> {
                         Ok(SdkResponse { status: 206, body })
                     }
                 },
-                _ => Err(err),
+                other => Err(other),
             },
         }
     }

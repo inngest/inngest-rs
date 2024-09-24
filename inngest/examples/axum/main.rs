@@ -5,6 +5,7 @@ use axum::{
 use inngest::{
     function::{create_function, FunctionOps, Input, ServableFn, Trigger},
     handler::Handler,
+    result::InggestError,
     serve,
     step_tool::Step as StepTool,
     Inngest,
@@ -37,13 +38,36 @@ async fn main() {
         .unwrap();
 }
 
+#[derive(Debug)]
+enum UserLandError {
+    General(String),
+}
+
+impl std::fmt::Display for UserLandError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            UserLandError::General(msg) => write!(f, "General error: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for UserLandError {}
+
+impl From<UserLandError> for inngest::result::InggestError {
+    fn from(err: UserLandError) -> inngest::result::InggestError {
+        match err {
+            UserLandError::General(msg) => inngest::result::InggestError::Basic(msg),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct TestData {
     name: String,
     data: u8,
 }
 
-fn dummy_fn() -> ServableFn<TestData> {
+fn dummy_fn() -> ServableFn<TestData, InggestError> {
     create_function(
         FunctionOps {
             id: "Dummy func".to_string(),
@@ -65,7 +89,7 @@ fn dummy_fn() -> ServableFn<TestData> {
     )
 }
 
-fn hello_fn() -> ServableFn<TestData> {
+fn hello_fn() -> ServableFn<TestData, InggestError> {
     create_function(
         FunctionOps {
             id: "Hello func".to_string(),
