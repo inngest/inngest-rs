@@ -25,6 +25,13 @@ pub enum Error {
     Basic(String),
     RetryAt(RetryAfterError),
     NoRetry(NonRetriableError),
+
+    // These are not expected to be used by users
+    Interupt(FlowControlError),
+}
+
+#[derive(Debug)]
+pub(crate) enum FlowControlError {
     StepGenerator,
 }
 

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use inngest_macros::InngestEvent;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -8,7 +7,7 @@ use crate::{
     config::Config,
     event::{Event, InngestEvent},
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
-    result::{Error, SdkResponse},
+    result::{Error, FlowControlError, SdkResponse},
     sdk::Request,
     step_tool::Step as StepTool,
     Inngest,
@@ -144,21 +143,21 @@ impl<T: InngestEvent> Handler<T> {
             }),
 
             Err(err) => match err {
-                Error::StepGenerator => {
-                    let body = match serde_json::to_value(&step_tool.genop) {
-                        Ok(v) => v,
-                        Err(err) => {
-                            return Err(Error::Basic(format!(
-                                "error serializing step response: {}",
-                                err
-                            )));
-                        }
-                    };
+                Error::Interupt(flow) => match flow {
+                    FlowControlError::StepGenerator => {
+                        let body = match serde_json::to_value(&step_tool.genop) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                return Err(Error::Basic(format!(
+                                    "error serializing step response: {}",
+                                    err
+                                )));
+                            }
+                        };
 
-                    println!("RESP: {:#?}", body);
-
-                    Ok(SdkResponse { status: 206, body })
-                }
+                        Ok(SdkResponse { status: 206, body })
+                    }
+                },
                 _ => Err(err),
             },
         }

@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::json;
 use sha1::{Digest, Sha1};
 
-use crate::result::Error;
+use crate::result::{Error, FlowControlError};
 
 #[derive(Serialize)]
 enum Opcode {
@@ -71,7 +71,7 @@ impl Step {
                 let mut opts = HashMap::new();
                 // TODO: convert `dur` to string format
                 // ref: https://github.com/RonniSkansing/duration-string
-                opts.insert("duration".to_string(), "3s".to_string());
+                opts.insert("duration".to_string(), "10s".to_string());
 
                 self.genop.push(GeneratorOpCode {
                     op: Opcode::Sleep,
@@ -82,7 +82,7 @@ impl Step {
                     opts,
                 });
 
-                Err(Error::StepGenerator)
+                Err(Error::Interupt(FlowControlError::StepGenerator))
             }
         }
     }
