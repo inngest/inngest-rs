@@ -133,7 +133,7 @@ impl<T: InngestEvent> Handler<T> {
             },
         };
 
-        let step_tool = StepTool::new();
+        let step_tool = StepTool::new(&data.steps);
 
         // run the function
         let res = (func.func)(&input, step_tool);

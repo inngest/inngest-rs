@@ -1,16 +1,35 @@
+use core::fmt;
 use std::collections::HashMap;
 
 use base16;
 use sha1::{Digest, Sha1};
+
+enum Opcode {
+    StepRun,
+    StepSleep,
+    StepWaitForEvent,
+    StepInvoke,
+}
+
+impl fmt::Display for Opcode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Opcode::StepRun => write!(f, "StepRun"),
+            Opcode::StepSleep => write!(f, "Sleep"),
+            Opcode::StepWaitForEvent => write!(f, "WaitForEvent"),
+            Opcode::StepInvoke => write!(f, "InvokeFunction"),
+        }
+    }
+}
 
 pub struct Step {
     state: HashMap<String, String>,
 }
 
 impl Step {
-    pub fn new() -> Self {
+    pub fn new(state: &HashMap<String, String>) -> Self {
         Step {
-            state: HashMap::new(),
+            state: state.clone(),
         }
     }
 
@@ -32,16 +51,25 @@ impl Step {
 
 struct UnhashedOp {
     id: String,
-    op: String,
+    op: Opcode,
     pos: u32,
+    // TODO: need an opts as map
 }
 
 impl UnhashedOp {
     fn new(op: &str, id: &str) -> Self {
-        // TODO: actually set this correctly
+        let opcode = match op {
+            "Step" => Opcode::StepRun,
+            "StepRun" => Opcode::StepRun,
+            "Sleep" => Opcode::StepSleep,
+            "WaitForEvent" => Opcode::StepWaitForEvent,
+            "InvokeFunction" => Opcode::StepInvoke,
+            _ => Opcode::StepRun,
+        };
+
         UnhashedOp {
-            id: String::new(),
-            op: String::new(),
+            id: id.to_string(),
+            op: opcode,
             pos: 0,
         }
     }
@@ -69,7 +97,7 @@ mod tests {
     fn test_op_hash() {
         let op = UnhashedOp {
             id: "hello".to_string(),
-            op: "Step".to_string(),
+            op: Opcode::StepRun,
             pos: 0,
         };
 
@@ -80,7 +108,7 @@ mod tests {
     fn test_op_hash_with_position() {
         let op = UnhashedOp {
             id: "hello".to_string(),
-            op: "Step".to_string(),
+            op: Opcode::StepRun,
             pos: 1,
         };
 
