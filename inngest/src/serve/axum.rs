@@ -1,7 +1,6 @@
 use crate::{
-    event::InngestEvent,
     handler::{Handler, RunQueryParams},
-    result::{Error, SdkResponse},
+    result::{InggestError, SdkResponse},
 };
 
 use axum::{
@@ -9,15 +8,16 @@ use axum::{
     http::HeaderMap,
     Json,
 };
+use serde::Deserialize;
 use serde_json::Value;
 use std::{collections::HashMap, sync::Arc};
 
 // TODO:
 // provide a macro for simple import into Axum routes
 
-pub async fn register<T: InngestEvent>(
+pub async fn register<T, E>(
     hmap: HeaderMap,
-    State(handler): State<Arc<Handler<T>>>,
+    State(handler): State<Arc<Handler<T, E>>>,
 ) -> Result<(), String> {
     // convert the http headers into a generic hashmap
     let mut headers: HashMap<String, String> = HashMap::new();
@@ -31,12 +31,16 @@ pub async fn register<T: InngestEvent>(
     handler.sync(&headers, "axum").await
 }
 
-pub async fn invoke<T: InngestEvent>(
+pub async fn invoke<T, E>(
     Query(query): Query<RunQueryParams>,
-    State(handler): State<Arc<Handler<T>>>,
+    State(handler): State<Arc<Handler<T, E>>>,
     Json(body): Json<Value>,
-) -> Result<SdkResponse, Error> {
+) -> Result<SdkResponse, InggestError>
+where
+    T: for<'de> Deserialize<'de>,
+    E: Into<InggestError>,
+{
     handler
         .run(query, &body)
-        .map_err(|err| Error::Basic(format!("{:?}", err)))
+        .map_err(|err| InggestError::Basic(format!("{:?}", err)))
 }

@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::json;
 use sha1::{Digest, Sha1};
 
-use crate::result::{Error, FlowControlError};
+use crate::result::{FlowControlError, InggestError};
 
 #[derive(Serialize)]
 enum Opcode {
@@ -44,14 +44,14 @@ impl Step {
 
     // TODO: run
 
-    pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), Error> {
+    pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), InggestError> {
         let mut pos = 0;
         match self.indices.get_mut(id) {
             None => {
                 self.indices.insert(id.to_string(), 0);
             }
             Some(v) => {
-                *v = *v + 1;
+                *v += 1;
                 pos = *v;
             }
         }
@@ -82,7 +82,7 @@ impl Step {
                     opts,
                 });
 
-                Err(Error::Interupt(FlowControlError::StepGenerator))
+                Err(InggestError::Interrupt(FlowControlError::StepGenerator))
             }
         }
     }
