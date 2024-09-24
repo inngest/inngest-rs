@@ -14,6 +14,7 @@ impl IntoResponse for SdkResponse {
     fn into_response(self) -> axum::response::Response {
         match self.status {
             200 => (StatusCode::OK, Json(self.body)).into_response(),
+            206 => (StatusCode::PARTIAL_CONTENT, Json(self.body)).into_response(),
             _ => (StatusCode::BAD_REQUEST, Json(json!("Unknown response"))).into_response(),
         }
     }
@@ -24,6 +25,7 @@ pub enum Error {
     Basic(String),
     RetryAt(RetryAfterError),
     NoRetry(NonRetriableError),
+    StepGenerator,
 }
 
 impl IntoResponse for Error {

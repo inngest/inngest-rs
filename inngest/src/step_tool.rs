@@ -1,45 +1,90 @@
-use core::fmt;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 
 use base16;
+use serde::Serialize;
+use serde_json::json;
 use sha1::{Digest, Sha1};
 
+use crate::result::Error;
+
+#[derive(Serialize)]
 enum Opcode {
     StepRun,
-    StepSleep,
-    StepWaitForEvent,
-    StepInvoke,
+    Sleep,
+    WaitForEvent,
+    InvokeFunction,
+    // StepPlanned
 }
 
-impl fmt::Display for Opcode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Opcode::StepRun => write!(f, "StepRun"),
-            Opcode::StepSleep => write!(f, "Sleep"),
-            Opcode::StepWaitForEvent => write!(f, "WaitForEvent"),
-            Opcode::StepInvoke => write!(f, "InvokeFunction"),
-        }
-    }
+#[derive(Serialize)]
+pub(crate) struct GeneratorOpCode {
+    op: Opcode,
+    id: String,
+    name: String,
+    #[serde(rename(serialize = "displayName"))]
+    display_name: String,
+    data: serde_json::Value,
+    opts: HashMap<String, String>,
 }
 
 pub struct Step {
-    state: HashMap<String, String>,
+    state: HashMap<String, Option<String>>,
+    indices: HashMap<String, u64>,
+    pub(crate) genop: Vec<GeneratorOpCode>,
 }
 
 impl Step {
-    pub fn new(state: &HashMap<String, String>) -> Self {
+    pub fn new(state: &HashMap<String, Option<String>>) -> Self {
         Step {
             state: state.clone(),
+            indices: HashMap::new(),
+            genop: vec![],
         }
     }
 
     // TODO: run
 
-    pub fn sleep(&self) {
-        // TODO: unhashed op
-        // TODO: hash it
-        // TODO: check if state has hashed_id as key already
-        //       if not, throw to exit code execution
+    pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), Error> {
+        let mut pos = 0;
+        match self.indices.get_mut(id) {
+            None => {
+                self.indices.insert(id.to_string(), 0);
+            }
+            Some(v) => {
+                *v = *v + 1;
+                pos = *v;
+            }
+        }
+
+        let op = UnhashedOp {
+            id: id.to_string(),
+            pos,
+        };
+        let hashed = op.hash();
+
+        match self.state.get(&hashed) {
+            // if state already exists, it means we already slept
+            Some(_) => Ok(()),
+
+            // TODO: if no state exists, we need to signal to sleep
+            None => {
+                let mut opts = HashMap::new();
+                // TODO: convert `dur` to string format
+                // ref: https://github.com/RonniSkansing/duration-string
+                opts.insert("duration".to_string(), "3s".to_string());
+
+                self.genop.push(GeneratorOpCode {
+                    op: Opcode::Sleep,
+                    id: hashed,
+                    name: id.to_string(),
+                    display_name: id.to_string(),
+                    data: json!({}),
+                    opts,
+                });
+
+                Err(Error::StepGenerator)
+            }
+        }
     }
 
     // TODO: sleep_until
@@ -51,29 +96,11 @@ impl Step {
 
 struct UnhashedOp {
     id: String,
-    op: Opcode,
-    pos: u32,
-    // TODO: need an opts as map
+    pos: u64,
+    // TODO: need an opts as map??
 }
 
 impl UnhashedOp {
-    fn new(op: &str, id: &str) -> Self {
-        let opcode = match op {
-            "Step" => Opcode::StepRun,
-            "StepRun" => Opcode::StepRun,
-            "Sleep" => Opcode::StepSleep,
-            "WaitForEvent" => Opcode::StepWaitForEvent,
-            "InvokeFunction" => Opcode::StepInvoke,
-            _ => Opcode::StepRun,
-        };
-
-        UnhashedOp {
-            id: id.to_string(),
-            op: opcode,
-            pos: 0,
-        }
-    }
-
     fn hash(&self) -> String {
         let key = if self.pos > 0 {
             format!("{}:{}", self.id, self.pos)
@@ -97,7 +124,6 @@ mod tests {
     fn test_op_hash() {
         let op = UnhashedOp {
             id: "hello".to_string(),
-            op: Opcode::StepRun,
             pos: 0,
         };
 
@@ -108,7 +134,6 @@ mod tests {
     fn test_op_hash_with_position() {
         let op = UnhashedOp {
             id: "hello".to_string(),
-            op: Opcode::StepRun,
             pos: 1,
         };
 

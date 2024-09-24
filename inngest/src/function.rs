@@ -43,7 +43,7 @@ impl Default for FunctionOps {
 pub struct ServableFn<T: InngestEvent> {
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: fn(&Input<T>, StepTool) -> Result<Value, Error>,
+    pub func: fn(&Input<T>, &mut StepTool) -> Result<Value, Error>,
 }
 
 impl<T: InngestEvent> Debug for ServableFn<T> {
@@ -109,7 +109,7 @@ pub enum Trigger {
 pub fn create_function<T: InngestEvent>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: fn(&Input<T>, StepTool) -> Result<Value, Error>,
+    func: fn(&Input<T>, &mut StepTool) -> Result<Value, Error>,
 ) -> ServableFn<T> {
     ServableFn {
         opts,

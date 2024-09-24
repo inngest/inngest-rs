@@ -107,10 +107,12 @@ impl<T: InngestEvent> Handler<T> {
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
+                // TODO: need to surface this error better
                 let msg = Error::Basic(format!("error parsing run request: {}", err));
                 return Err(msg);
             },
         };
+
         // TODO: retrieve data from API on flag
         if data.use_api {
         }
@@ -133,15 +135,34 @@ impl<T: InngestEvent> Handler<T> {
             },
         };
 
-        let step_tool = StepTool::new(&data.steps);
+        let mut step_tool = StepTool::new(&data.steps);
 
         // run the function
-        let res = (func.func)(&input, step_tool);
+        match (func.func)(&input, &mut step_tool) {
+            Ok(v) => Ok(SdkResponse {
+                status: 200,
+                body: v,
+            }),
 
-        res.map(|v| SdkResponse {
-            status: 200,
-            body: v,
-        })
+            Err(err) => match err {
+                Error::StepGenerator => {
+                    let body = match serde_json::to_value(&step_tool.genop) {
+                        Ok(v) => v,
+                        Err(err) => {
+                            return Err(Error::Basic(format!("error serializing step response: {}", err)));
+                        },
+                    };
+
+                    println!("RESP: {:#?}", body);
+
+                    Ok(SdkResponse {
+                        status: 206,
+                        body,
+                    })
+                },
+                _ => Err(err)
+            }
+        }
     }
 }
 
@@ -152,7 +173,7 @@ struct RunRequestBody<T: 'static>
     event: Event<T>,
     events: Vec<Event<T>>,
     use_api: bool,
-    steps: HashMap<String, String>,
+    steps: HashMap<String, Option<String>>,
     version: i32,
 }
 
