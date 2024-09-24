@@ -11,7 +11,7 @@ use crate::{
     result::{Error, SdkResponse},
     sdk::Request,
     step_tool::Step as StepTool,
-    Inngest
+    Inngest,
 };
 
 pub struct Handler<T: InngestEvent> {
@@ -110,12 +110,11 @@ impl<T: InngestEvent> Handler<T> {
                 // TODO: need to surface this error better
                 let msg = Error::Basic(format!("error parsing run request: {}", err));
                 return Err(msg);
-            },
+            }
         };
 
         // TODO: retrieve data from API on flag
-        if data.use_api {
-        }
+        if data.use_api {}
 
         // find the specified function
         let Some(func) = self.funcs.get(&query.fn_id) else {
@@ -149,26 +148,25 @@ impl<T: InngestEvent> Handler<T> {
                     let body = match serde_json::to_value(&step_tool.genop) {
                         Ok(v) => v,
                         Err(err) => {
-                            return Err(Error::Basic(format!("error serializing step response: {}", err)));
-                        },
+                            return Err(Error::Basic(format!(
+                                "error serializing step response: {}",
+                                err
+                            )));
+                        }
                     };
 
                     println!("RESP: {:#?}", body);
 
-                    Ok(SdkResponse {
-                        status: 206,
-                        body,
-                    })
-                },
-                _ => Err(err)
-            }
+                    Ok(SdkResponse { status: 206, body })
+                }
+                _ => Err(err),
+            },
         }
     }
 }
 
 #[derive(Deserialize)]
-struct RunRequestBody<T: 'static>
-{
+struct RunRequestBody<T: 'static> {
     ctx: RunRequestCtx,
     event: Event<T>,
     events: Vec<Event<T>>,
@@ -191,5 +189,5 @@ struct RunRequestCtx {
 #[derive(Deserialize)]
 struct RunRequestCtxStack {
     current: u32,
-    stack: Vec<String>
+    stack: Vec<String>,
 }

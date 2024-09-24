@@ -7,7 +7,7 @@ use inngest::{
     handler::Handler,
     serve,
     step_tool::Step as StepTool,
-    Inngest
+    Inngest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
