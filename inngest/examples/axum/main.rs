@@ -124,10 +124,13 @@ fn step_run() -> ServableFn<TestData, InggestError> {
         |_input: &Input<TestData>,
          step: &mut StepTool|
          -> Result<serde_json::Value, InggestError> {
+            let some_captured_variable = "captured".to_string();
+
             let step_res = step.run(
                 "some-step-function",
                 || -> Result<serde_json::Value, UserLandError> {
-                    Ok(json!({ "returned from within step.run": true }))
+                    let captured = some_captured_variable.clone();
+                    Ok(json!({ "returned from within step.run": true, "captured": captured }))
                 },
             )?;
 
