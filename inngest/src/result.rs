@@ -54,12 +54,6 @@ pub(crate) enum FlowControlError {
     StepError(StepError),
 }
 
-impl FlowControlError {
-    pub fn new_step_generator(opcodes: impl Into<Vec<GeneratorOpCode>>) -> Self {
-        FlowControlError::StepGenerator(opcodes.into())
-    }
-}
-
 impl IntoResponse for InngestError {
     fn into_response(self) -> axum::response::Response {
         (
