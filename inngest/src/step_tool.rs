@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
 
-use crate::result::{FlowControlError, InggestError, StepError};
+use crate::result::{FlowControlError, InngestError, StepError};
 
 #[derive(Serialize)]
 enum Opcode {
@@ -42,11 +42,11 @@ enum StepRunResult<T, E> {
     Error(E),
 }
 
-pub trait UserProvidedError<'a>: Error + Serialize + Deserialize<'a> + Into<InggestError> {}
+pub trait UserProvidedError<'a>: Error + Serialize + Deserialize<'a> + Into<InngestError> {}
 
 impl<T> UserProvidedError<'_> for T
 where
-    T: Error + Serialize + Into<InggestError>,
+    T: Error + Serialize + Into<InngestError>,
     T: for<'a> Deserialize<'a>,
 {
 }
@@ -64,10 +64,9 @@ impl Step {
         &mut self,
         id: &str,
         f: impl FnOnce() -> Result<T, E>,
-    ) -> Result<T, InggestError>
+    ) -> Result<T, InngestError>
     where
-        T: for<'a> Deserialize<'a>,
-        T: Serialize,
+        T: for<'a> Deserialize<'a> + Serialize,
         E: for<'a> UserProvidedError<'a>,
     {
         let mut pos = 0;
@@ -88,7 +87,7 @@ impl Step {
 
         if let Some(Some(stored_value)) = self.state.remove(&hashed) {
             let run_result: StepRunResult<T, E> = serde_json::from_value(stored_value)
-                .map_err(|e| InggestError::Basic(e.to_string()))?;
+                .map_err(|e| InngestError::Basic(e.to_string()))?;
 
             match run_result {
                 StepRunResult::Data(data) => return Ok(data),
@@ -100,7 +99,7 @@ impl Step {
         match f() {
             Ok(result) => {
                 let serialized = serde_json::to_value(&result)
-                    .map_err(|e| InggestError::Basic(e.to_string()))?;
+                    .map_err(|e| InngestError::Basic(e.to_string()))?;
 
                 self.genop.push(GeneratorOpCode {
                     op: Opcode::StepRun,
@@ -111,11 +110,11 @@ impl Step {
                     opts: HashMap::new(),
                     error: None,
                 });
-                Err(InggestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
             }
             Err(err) => {
                 let serialized_err =
-                    serde_json::to_value(&err).map_err(|e| InggestError::Basic(e.to_string()))?;
+                    serde_json::to_value(&err).map_err(|e| InngestError::Basic(e.to_string()))?;
 
                 let error = StepError {
                     name: "Step failed".to_string(),
@@ -132,12 +131,12 @@ impl Step {
                     opts: HashMap::new(),
                     error: Some(error),
                 });
-                Err(InggestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
             }
         }
     }
 
-    pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), InggestError> {
+    pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), InngestError> {
         let mut pos = 0;
         match self.indices.get_mut(id) {
             None => {
@@ -176,7 +175,7 @@ impl Step {
                     error: None,
                 });
 
-                Err(InggestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
             }
         }
     }

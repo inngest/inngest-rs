@@ -21,7 +21,7 @@ impl IntoResponse for SdkResponse {
 }
 
 #[derive(Debug)]
-pub enum InggestError {
+pub enum InngestError {
     Basic(String),
     RetryAt(RetryAfterError),
     NoRetry(NonRetryableError),
@@ -36,7 +36,7 @@ pub(crate) enum FlowControlError {
     StepGenerator,
 }
 
-impl IntoResponse for InggestError {
+impl IntoResponse for InngestError {
     fn into_response(self) -> axum::response::Response {
         (
             StatusCode::INTERNAL_SERVER_ERROR,

@@ -9,7 +9,7 @@ pub mod step_tool;
 
 use config::Config;
 use event::{Event, InngestEvent};
-use result::InggestError;
+use result::InngestError;
 
 #[derive(Clone)]
 pub struct Inngest {
@@ -70,24 +70,27 @@ impl Inngest {
     }
 
     // TODO: make the result return something properly
-    pub async fn send_event<T: InngestEvent>(&self, evt: &Event<T>) -> Result<(), InggestError> {
+    pub async fn send_event<T: InngestEvent>(&self, evt: &Event<T>) -> Result<(), InngestError> {
         self.http
             .post("http://127.0.0.1:8288/e/test")
             .json(&evt)
             .send()
             .await
             .map(|_| ())
-            .map_err(|err| InggestError::Basic(err.to_string()))
+            .map_err(|err| InngestError::Basic(err.to_string()))
     }
 
     // TODO: make the result return something properly
-    pub async fn send_events<T: InngestEvent>(&self, evts: &[&Event<T>]) -> Result<(), InggestError> {
+    pub async fn send_events<T: InngestEvent>(
+        &self,
+        evts: &[&Event<T>],
+    ) -> Result<(), InngestError> {
         self.http
             .post("http://127.0.0.1:8288/e/test")
             .json(&evts)
             .send()
             .await
             .map(|_| ())
-            .map_err(|err| InggestError::Basic(err.to_string()))
+            .map_err(|err| InngestError::Basic(err.to_string()))
     }
 }

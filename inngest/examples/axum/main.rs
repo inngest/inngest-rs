@@ -5,7 +5,7 @@ use axum::{
 use inngest::{
     function::{create_function, FunctionOps, Input, ServableFn, Trigger},
     handler::Handler,
-    result::InggestError,
+    result::InngestError,
     serve,
     step_tool::Step as StepTool,
     Inngest,
@@ -58,10 +58,10 @@ impl std::fmt::Display for UserLandError {
 
 impl std::error::Error for UserLandError {}
 
-impl From<UserLandError> for inngest::result::InggestError {
-    fn from(err: UserLandError) -> inngest::result::InggestError {
+impl From<UserLandError> for inngest::result::InngestError {
+    fn from(err: UserLandError) -> inngest::result::InngestError {
         match err {
-            UserLandError::General(msg) => inngest::result::InggestError::Basic(msg),
+            UserLandError::General(msg) => inngest::result::InngestError::Basic(msg),
         }
     }
 }
@@ -72,7 +72,7 @@ struct TestData {
     data: u8,
 }
 
-fn dummy_fn() -> ServableFn<TestData, InggestError> {
+fn dummy_fn() -> ServableFn<TestData, InngestError> {
     create_function(
         FunctionOps {
             id: "Dummy func".to_string(),
@@ -94,7 +94,7 @@ fn dummy_fn() -> ServableFn<TestData, InggestError> {
     )
 }
 
-fn hello_fn() -> ServableFn<TestData, InggestError> {
+fn hello_fn() -> ServableFn<TestData, InngestError> {
     create_function(
         FunctionOps {
             id: "Hello func".to_string(),
@@ -115,7 +115,7 @@ fn hello_fn() -> ServableFn<TestData, InggestError> {
     )
 }
 
-fn step_run() -> ServableFn<TestData, InggestError> {
+fn step_run() -> ServableFn<TestData, InngestError> {
     create_function(
         FunctionOps {
             id: "Step run".to_string(),
@@ -127,7 +127,7 @@ fn step_run() -> ServableFn<TestData, InggestError> {
         },
         |_input: &Input<TestData>,
          step: &mut StepTool|
-         -> Result<serde_json::Value, InggestError> {
+         -> Result<serde_json::Value, InngestError> {
             let some_captured_variable = "captured".to_string();
 
             let step_res = step.run(
@@ -145,7 +145,7 @@ fn step_run() -> ServableFn<TestData, InggestError> {
     )
 }
 
-fn fallible_step_run() -> ServableFn<TestData, InggestError> {
+fn fallible_step_run() -> ServableFn<TestData, InngestError> {
     create_function(
         FunctionOps {
             id: "Fallible Step run".to_string(),
@@ -157,7 +157,7 @@ fn fallible_step_run() -> ServableFn<TestData, InggestError> {
         },
         |_input: &Input<TestData>,
          step: &mut StepTool|
-         -> Result<serde_json::Value, InggestError> {
+         -> Result<serde_json::Value, InngestError> {
             let step_res = step.run(
                 "fallible-step-function",
                 || -> Result<serde_json::Value, UserLandError> {

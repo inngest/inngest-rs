@@ -7,7 +7,7 @@ use crate::{
     config::Config,
     event::{Event, InngestEvent},
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
-    result::{FlowControlError, InggestError, SdkResponse},
+    result::{FlowControlError, InngestError, SdkResponse},
     sdk::Request,
     step_tool::Step as StepTool,
     Inngest,
@@ -102,16 +102,16 @@ impl<T, E> Handler<T, E> {
             .map_err(|_err| "error registering".to_string())
     }
 
-    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, InggestError>
+    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, InngestError>
     where
         T: for<'de> Deserialize<'de> + Debug,
-        E: Into<InggestError>,
+        E: Into<InngestError>,
     {
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
                 // TODO: need to surface this error better
-                let msg = InggestError::Basic(format!("error parsing run request: {}", err));
+                let msg = InngestError::Basic(format!("error parsing run request: {}", err));
                 return Err(msg);
             }
         };
@@ -121,7 +121,7 @@ impl<T, E> Handler<T, E> {
 
         // find the specified function
         let Some(func) = self.funcs.get(&query.fn_id) else {
-            return Err(InggestError::Basic(format!(
+            return Err(InngestError::Basic(format!(
                 "no function registered as ID: {}",
                 &query.fn_id
             )));
@@ -147,12 +147,12 @@ impl<T, E> Handler<T, E> {
             }),
 
             Err(err) => match err.into() {
-                InggestError::Interrupt(flow) => match flow {
+                InngestError::Interrupt(flow) => match flow {
                     FlowControlError::StepGenerator => {
                         let body = match serde_json::to_value(&step_tool.genop) {
                             Ok(v) => v,
                             Err(err) => {
-                                return Err(InggestError::Basic(format!(
+                                return Err(InngestError::Basic(format!(
                                     "error serializing step response: {}",
                                     err
                                 )));

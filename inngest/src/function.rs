@@ -1,6 +1,6 @@
 use crate::{
     event::{Event, InngestEvent},
-    result::InggestError,
+    result::InngestError,
     step_tool::Step as StepTool,
 };
 use serde::{Deserialize, Serialize};
