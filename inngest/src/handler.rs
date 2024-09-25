@@ -131,9 +131,11 @@ impl<T, E> Handler<T, E> {
             event: data.event,
             events: data.events,
             ctx: InputCtx {
+                env: data.ctx.env.clone(),
                 fn_id: query.fn_id.clone(),
                 run_id: data.ctx.run_id.clone(),
                 step_id: "step".to_string(),
+                attempt: data.ctx.attempt,
             },
         };
 
