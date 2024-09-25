@@ -1,20 +1,35 @@
 use std::fmt::{Debug, Display};
 
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::IntoResponse,
+    Json,
+};
 use serde::Serialize;
 use serde_json::{json, Value};
 
 #[derive(Serialize)]
 pub struct SdkResponse {
-    pub status: u8,
+    pub status: u16,
     pub body: Value,
 }
 
 impl IntoResponse for SdkResponse {
     fn into_response(self) -> axum::response::Response {
+        let mut headers = HeaderMap::new();
+        let sdk = format!("rust:{}", env!("CARGO_PKG_VERSION"));
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        headers.insert("x-inngest-framework", HeaderValue::from_static("axum"));
+        headers.insert("x-inngest-sdk", HeaderValue::from_str(&sdk).unwrap());
+
         match self.status {
-            200 => (StatusCode::OK, Json(self.body)).into_response(),
-            206 => (StatusCode::PARTIAL_CONTENT, Json(self.body)).into_response(),
+            200 => (StatusCode::OK, headers, Json(self.body)).into_response(),
+            206 => (StatusCode::PARTIAL_CONTENT, headers, Json(self.body)).into_response(),
+            400 => (StatusCode::BAD_REQUEST, headers, Json(self.body)).into_response(),
+            500 => (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(self.body)).into_response(),
             _ => (StatusCode::BAD_REQUEST, Json(json!("Unknown response"))).into_response(),
         }
     }

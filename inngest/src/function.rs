@@ -1,6 +1,5 @@
 use crate::{
     event::{Event, InngestEvent},
-    result::InngestError,
     step_tool::Step as StepTool,
 };
 use serde::{Deserialize, Serialize};
@@ -18,9 +17,11 @@ pub struct Input<T: 'static> {
 }
 
 pub struct InputCtx {
+    pub env: String,
     pub fn_id: String,
     pub run_id: String,
     pub step_id: String,
+    pub attempt: u8,
 }
 
 #[derive(Debug, Clone)]

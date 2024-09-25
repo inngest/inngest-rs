@@ -155,20 +155,16 @@ fn fallible_step_run() -> ServableFn<TestData, InngestError> {
             event: "test/step-run-fallible".to_string(),
             expression: None,
         },
-        |_input: &Input<TestData>,
-         step: &mut StepTool|
-         -> Result<serde_json::Value, InngestError> {
+        |input: &Input<TestData>, step: &mut StepTool| -> Result<serde_json::Value, InngestError> {
             let step_res = step.run(
                 "fallible-step-function",
                 || -> Result<serde_json::Value, UserLandError> {
-                    let time = SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs();
-
                     // if even, fail
-                    if time % 2 == 0 {
-                        return Err(UserLandError::General("even time".to_string()));
+                    if input.ctx.attempt % 2 == 0 {
+                        return Err(UserLandError::General(format!(
+                            "Attempt {}",
+                            input.ctx.attempt
+                        )));
                     }
 
                     Ok(json!({ "returned from within step.run": true }))
