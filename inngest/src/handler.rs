@@ -154,9 +154,12 @@ impl<T, E> Handler<T, E> {
                                 Ok(v) => {
                                     // TODO: check current attempts and see if it can retry or not
                                     (500, v)
-                                },
+                                }
                                 Err(err) => {
-                                    return Err(InngestError::Basic(format!("error seralizing step error: {}", err)));
+                                    return Err(InngestError::Basic(format!(
+                                        "error seralizing step error: {}",
+                                        err
+                                    )));
                                 }
                             }
                         } else if step_tool.genop.len() > 0 {
