@@ -2,10 +2,13 @@ use std::{collections::HashMap, error::Error, time::Duration};
 
 use base16;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use sha1::{Digest, Sha1};
 
-use crate::result::{FlowControlError, InngestError, StepError};
+use crate::{
+    result::{FlowControlError, InngestError, StepError},
+    utils::duration,
+};
 
 #[derive(Serialize)]
 enum Opcode {
@@ -158,9 +161,7 @@ impl Step {
             // TODO: if no state exists, we need to signal to sleep
             None => {
                 let mut opts = HashMap::new();
-                // TODO: convert `dur` to string format
-                // ref: https://github.com/RonniSkansing/duration-string
-                opts.insert("duration".to_string(), "10s".to_string());
+                opts.insert("duration".to_string(), duration::to_string(dur));
 
                 self.genop.push(GeneratorOpCode {
                     op: Opcode::Sleep,
