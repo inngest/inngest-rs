@@ -12,10 +12,7 @@ use inngest::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{
-    sync::Arc,
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
 
 #[tokio::main]
 async fn main() {
