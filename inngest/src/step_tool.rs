@@ -77,7 +77,6 @@ impl Step {
     {
         let op = self.new_op(id);
         let hashed = op.hash();
-        let mut ops = vec![];
 
         if let Some(Some(stored_value)) = self.state.remove(&hashed) {
             let run_result: StepRunResult<T, E> = serde_json::from_value(stored_value)
@@ -95,17 +94,16 @@ impl Step {
                 let serialized = serde_json::to_value(&result)
                     .map_err(|e| InngestError::Basic(e.to_string()))?;
 
-                ops.push(GeneratorOpCode {
-                    op: Opcode::StepRun,
-                    id: hashed,
-                    name: id.to_string(),
-                    display_name: id.to_string(),
-                    data: serialized.into(),
-                    opts: HashMap::new(),
-                    error: None,
-                });
                 Err(InngestError::Interrupt(FlowControlError::StepGenerator(
-                    ops,
+                    vec![GeneratorOpCode {
+                        op: Opcode::StepRun,
+                        id: hashed,
+                        name: id.to_string(),
+                        display_name: id.to_string(),
+                        data: serialized.into(),
+                        opts: HashMap::new(),
+                        error: None,
+                    }],
                 )))
             }
             Err(err) => {
@@ -116,13 +114,14 @@ impl Step {
                 let serialized_err =
                     serde_json::to_value(&err).map_err(|e| InngestError::Basic(e.to_string()))?;
 
-                let err = StepError {
-                    name: "Step failed".to_string(),
-                    message: err.to_string(),
-                    stack: None,
-                    data: Some(serialized_err),
-                };
-                Err(InngestError::Interrupt(FlowControlError::StepError(err)))
+                Err(InngestError::Interrupt(FlowControlError::StepError(
+                    StepError {
+                        name: "Step failed".to_string(),
+                        message: err.to_string(),
+                        stack: None,
+                        data: Some(serialized_err),
+                    },
+                )))
             }
         }
     }
