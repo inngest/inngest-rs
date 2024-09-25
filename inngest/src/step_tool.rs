@@ -115,6 +115,10 @@ impl Step {
                 Err(InngestError::Interrupt(FlowControlError::StepGenerator))
             }
             Err(err) => {
+                // TODO: need to handle the following errors returned from the user
+                // - retry after error
+                // - non retriable error
+
                 let serialized_err =
                     serde_json::to_value(&err).map_err(|e| InngestError::Basic(e.to_string()))?;
 
