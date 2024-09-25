@@ -12,7 +12,10 @@ use inngest::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 #[tokio::main]
 async fn main() {
@@ -21,6 +24,7 @@ async fn main() {
     inngest_handler.register_fn(dummy_fn());
     inngest_handler.register_fn(hello_fn());
     inngest_handler.register_fn(step_run());
+    inngest_handler.register_fn(fallible_step_run());
 
     let inngest_state = Arc::new(inngest_handler);
 
@@ -129,6 +133,44 @@ fn step_run() -> ServableFn<TestData, InggestError> {
             let step_res = step.run(
                 "some-step-function",
                 || -> Result<serde_json::Value, UserLandError> {
+                    let captured = some_captured_variable.clone();
+                    Ok(json!({ "returned from within step.run": true, "captured": captured }))
+                },
+            )?;
+
+            // do something with the res..
+
+            Ok(step_res)
+        },
+    )
+}
+
+fn fallible_step_run() -> ServableFn<TestData, InggestError> {
+    create_function(
+        FunctionOps {
+            id: "Fallible Step run".to_string(),
+            ..Default::default()
+        },
+        Trigger::EventTrigger {
+            event: "test/step-run-fallible".to_string(),
+            expression: None,
+        },
+        |input: &Input<TestData>, step: &mut StepTool| -> Result<serde_json::Value, InggestError> {
+            let some_captured_variable = "captured".to_string();
+
+            let step_res = step.run(
+                "some-step-function",
+                || -> Result<serde_json::Value, UserLandError> {
+                    let time = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs();
+
+                    // if even, fail
+                    if time % 2 == 0 {
+                        return Err(UserLandError::General("even time".to_string()));
+                    }
+
                     let captured = some_captured_variable.clone();
                     Ok(json!({ "returned from within step.run": true, "captured": captured }))
                 },
