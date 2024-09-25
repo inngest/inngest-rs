@@ -42,6 +42,15 @@ enum StepRunResult<T, E> {
     Error(E),
 }
 
+pub trait UserProvidedError<'a>: Error + Serialize + Deserialize<'a> + Into<InggestError> {}
+
+impl<T> UserProvidedError<'_> for T
+where
+    T: Error + Serialize + Into<InggestError>,
+    T: for<'a> Deserialize<'a>,
+{
+}
+
 impl Step {
     pub fn new(state: &HashMap<String, Option<Value>>) -> Self {
         Step {
@@ -51,11 +60,14 @@ impl Step {
         }
     }
 
-    pub fn run<T, F, E>(&mut self, id: &str, f: F) -> Result<T, InggestError>
+    pub fn run<T, E>(
+        &mut self,
+        id: &str,
+        f: impl FnOnce() -> Result<T, E>,
+    ) -> Result<T, InggestError>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
-        E: for<'a> Deserialize<'a> + Serialize + Error + Into<InggestError>,
-        F: FnOnce() -> Result<T, E>,
+        E: for<'a> UserProvidedError<'a>,
     {
         let mut pos = 0;
         match self.indices.get_mut(id) {
