@@ -26,13 +26,14 @@ pub(crate) struct GeneratorOpCode {
     data: Option<serde_json::Value>,
     opts: HashMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<StepError>,
+    pub error: Option<StepError>,
 }
 
 pub struct Step {
     state: HashMap<String, Option<Value>>,
     indices: HashMap<String, u64>,
     pub(crate) genop: Vec<GeneratorOpCode>,
+    pub(crate) error: Option<StepError>,
 }
 
 #[derive(Deserialize)]
@@ -57,6 +58,7 @@ impl Step {
             state: state.clone(),
             indices: HashMap::new(),
             genop: vec![],
+            error: None,
         }
     }
 
@@ -116,20 +118,11 @@ impl Step {
                 let serialized_err =
                     serde_json::to_value(&err).map_err(|e| InngestError::Basic(e.to_string()))?;
 
-                let error = StepError {
+                self.error = Some(StepError {
                     name: "Step failed".to_string(),
                     message: err.to_string(),
                     stack: None,
                     data: Some(serialized_err),
-                };
-                self.genop.push(GeneratorOpCode {
-                    op: Opcode::StepRun,
-                    id: hashed,
-                    name: id.to_string(),
-                    display_name: id.to_string(),
-                    data: None,
-                    opts: HashMap::new(),
-                    error: Some(error),
                 });
                 Err(InngestError::Interrupt(FlowControlError::StepGenerator))
             }

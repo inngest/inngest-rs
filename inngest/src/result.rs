@@ -1,6 +1,10 @@
 use std::fmt::{Debug, Display};
 
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use axum::{
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::IntoResponse,
+    Json,
+};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -16,7 +20,19 @@ impl IntoResponse for SdkResponse {
             200 => (StatusCode::OK, Json(self.body)).into_response(),
             206 => (StatusCode::PARTIAL_CONTENT, Json(self.body)).into_response(),
             400 => (StatusCode::BAD_REQUEST, Json(self.body)).into_response(),
-            500 => (StatusCode::INTERNAL_SERVER_ERROR, Json(self.body)).into_response(),
+            500 => {
+                let sdk = format!("rust:{}", env!("CARGO_PKG_VERSION"));
+
+                let mut headers = HeaderMap::new();
+                headers.insert(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_static("application/json"),
+                );
+                headers.insert("x-inngest-framework", HeaderValue::from_static("axum"));
+                headers.insert("x-inngest-sdk", HeaderValue::from_str(&sdk).unwrap());
+
+                (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(self.body)).into_response()
+            }
             _ => (StatusCode::BAD_REQUEST, Json(json!("Unknown response"))).into_response(),
         }
     }

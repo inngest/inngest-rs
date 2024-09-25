@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::{
     config::Config,
@@ -149,17 +149,32 @@ impl<T, E> Handler<T, E> {
             Err(err) => match err.into() {
                 InngestError::Interrupt(flow) => match flow {
                     FlowControlError::StepGenerator => {
-                        let body = match serde_json::to_value(&step_tool.genop) {
-                            Ok(v) => v,
-                            Err(err) => {
-                                return Err(InngestError::Basic(format!(
-                                    "error serializing step response: {}",
-                                    err
-                                )));
+                        let (status, body) = if step_tool.error.is_some() {
+                            match serde_json::to_value(&step_tool.error) {
+                                Ok(v) => {
+                                    // TODO: check current attempts and see if it can retry or not
+                                    (500, v)
+                                },
+                                Err(err) => {
+                                    return Err(InngestError::Basic(format!("error seralizing step error: {}", err)));
+                                }
                             }
+                        } else if step_tool.genop.len() > 0 {
+                            // TODO: only expecting one for now, will need to handle multiple
+                            match serde_json::to_value(&step_tool.genop) {
+                                Ok(v) => (206, v),
+                                Err(err) => {
+                                    return Err(InngestError::Basic(format!(
+                                        "error serializing step response: {}",
+                                        err
+                                    )));
+                                }
+                            }
+                        } else {
+                            (206, json!("null"))
                         };
 
-                        Ok(SdkResponse { status: 206, body })
+                        Ok(SdkResponse { status, body })
                     }
                 },
                 other => Err(other),
