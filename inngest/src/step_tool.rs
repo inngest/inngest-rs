@@ -66,7 +66,8 @@ impl Step {
         f: impl FnOnce() -> Result<T, E>,
     ) -> Result<T, InggestError>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned,
+        T: for<'a> Deserialize<'a>,
+        T: Serialize,
         E: for<'a> UserProvidedError<'a>,
     {
         let mut pos = 0;
