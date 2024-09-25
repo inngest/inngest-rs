@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 #[tokio::main]
@@ -87,7 +87,7 @@ fn dummy_fn() -> ServableFn<TestData, InngestError> {
 
             let evt = &input.event;
             println!("Event: {}", evt.name);
-            step.sleep("sleep-test", Duration::from_secs(10))?;
+            step.sleep("sleep-test", Duration::from_secs(3))?;
 
             Ok(json!({ "dummy": true }))
         },
