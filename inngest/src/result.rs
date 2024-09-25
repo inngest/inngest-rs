@@ -46,10 +46,13 @@ impl IntoResponse for InggestError {
     }
 }
 
+#[derive(Serialize, Debug)]
 pub struct StepError {
     pub name: String,
     pub message: String,
     pub stack: Option<String>,
+    // not part of the spec but it's used in the Go SDK to deserialize into the original user error
+    pub data: Option<serde_json::Value>,
 }
 
 pub struct RetryAfterError {

@@ -20,6 +20,7 @@ async fn main() {
     let mut inngest_handler = Handler::new(client);
     inngest_handler.register_fn(dummy_fn());
     inngest_handler.register_fn(hello_fn());
+    inngest_handler.register_fn(step_run());
 
     let inngest_state = Arc::new(inngest_handler);
 
@@ -38,7 +39,7 @@ async fn main() {
         .unwrap();
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deserialize, Serialize)]
 enum UserLandError {
     General(String),
 }
@@ -106,6 +107,28 @@ fn hello_fn() -> ServableFn<TestData, InggestError> {
             println!("Event: {}", evt.name);
 
             Ok(json!("test hello"))
+        },
+    )
+}
+
+fn step_run() -> ServableFn<TestData, InggestError> {
+    create_function(
+        FunctionOps {
+            id: "Step run".to_string(),
+            ..Default::default()
+        },
+        Trigger::EventTrigger {
+            event: "test/step-run".to_string(),
+            expression: None,
+        },
+        |_input: &Input<TestData>,
+         step: &mut StepTool|
+         -> Result<serde_json::Value, InggestError> {
+            println!("In step run function");
+            step.run("some-step-function", || {
+                println!("In step function");
+                Ok::<_, UserLandError>(json!({ "returned from within step.run": true }))
+            })
         },
     )
 }

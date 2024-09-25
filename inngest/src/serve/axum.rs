@@ -10,7 +10,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::Value;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 // TODO:
 // provide a macro for simple import into Axum routes
@@ -37,7 +37,7 @@ pub async fn invoke<T, E>(
     Json(body): Json<Value>,
 ) -> Result<SdkResponse, InggestError>
 where
-    T: for<'de> Deserialize<'de>,
+    T: for<'de> Deserialize<'de> + Debug,
     E: Into<InggestError>,
 {
     handler
