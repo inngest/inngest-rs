@@ -1,0 +1,3 @@
+#!/bin/bash
+
+curl -X POST http://localhost:8288/e/test --data "{ \"name\": \"test/step-run\", \"data\": { \"name\": \"yolo\", \"data\": 2 } }"

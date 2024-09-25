@@ -1,11 +1,11 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, error::Error, time::Duration};
 
 use base16;
-use serde::Serialize;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
 
-use crate::result::{Error, FlowControlError};
+use crate::result::{FlowControlError, InngestError, StepError};
 
 #[derive(Serialize)]
 enum Opcode {
@@ -23,18 +23,36 @@ pub(crate) struct GeneratorOpCode {
     name: String,
     #[serde(rename(serialize = "displayName"))]
     display_name: String,
-    data: serde_json::Value,
+    data: Option<serde_json::Value>,
     opts: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<StepError>,
 }
 
 pub struct Step {
-    state: HashMap<String, Option<String>>,
+    state: HashMap<String, Option<Value>>,
     indices: HashMap<String, u64>,
     pub(crate) genop: Vec<GeneratorOpCode>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum StepRunResult<T, E> {
+    Data(T),
+    Error(E),
+}
+
+pub trait UserProvidedError<'a>: Error + Serialize + Deserialize<'a> + Into<InngestError> {}
+
+impl<T> UserProvidedError<'_> for T
+where
+    T: Error + Serialize + Into<InngestError>,
+    T: for<'a> Deserialize<'a>,
+{
+}
+
 impl Step {
-    pub fn new(state: &HashMap<String, Option<String>>) -> Self {
+    pub fn new(state: &HashMap<String, Option<Value>>) -> Self {
         Step {
             state: state.clone(),
             indices: HashMap::new(),
@@ -42,21 +60,95 @@ impl Step {
         }
     }
 
-    // TODO: run
-
-    pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), Error> {
+    pub fn run<T, E>(
+        &mut self,
+        id: &str,
+        f: impl FnOnce() -> Result<T, E>,
+    ) -> Result<T, InngestError>
+    where
+        T: for<'a> Deserialize<'a> + Serialize,
+        E: for<'a> UserProvidedError<'a>,
+    {
         let mut pos = 0;
         match self.indices.get_mut(id) {
             None => {
                 self.indices.insert(id.to_string(), 0);
             }
             Some(v) => {
-                *v = *v + 1;
+                *v += 1;
+                pos = *v;
+            }
+        }
+        let op = Op {
+            id: id.to_string(),
+            pos,
+        };
+        let hashed = op.hash();
+
+        if let Some(Some(stored_value)) = self.state.remove(&hashed) {
+            let run_result: StepRunResult<T, E> = serde_json::from_value(stored_value)
+                .map_err(|e| InngestError::Basic(e.to_string()))?;
+
+            match run_result {
+                StepRunResult::Data(data) => return Ok(data),
+                StepRunResult::Error(err) => return Err(err.into()),
+            }
+        }
+
+        // If we're here, we need to execute the function
+        match f() {
+            Ok(result) => {
+                let serialized = serde_json::to_value(&result)
+                    .map_err(|e| InngestError::Basic(e.to_string()))?;
+
+                self.genop.push(GeneratorOpCode {
+                    op: Opcode::StepRun,
+                    id: hashed,
+                    name: id.to_string(),
+                    display_name: id.to_string(),
+                    data: serialized.into(),
+                    opts: HashMap::new(),
+                    error: None,
+                });
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+            }
+            Err(err) => {
+                let serialized_err =
+                    serde_json::to_value(&err).map_err(|e| InngestError::Basic(e.to_string()))?;
+
+                let error = StepError {
+                    name: "Step failed".to_string(),
+                    message: err.to_string(),
+                    stack: None,
+                    data: Some(serialized_err),
+                };
+                self.genop.push(GeneratorOpCode {
+                    op: Opcode::StepRun,
+                    id: hashed,
+                    name: id.to_string(),
+                    display_name: id.to_string(),
+                    data: None,
+                    opts: HashMap::new(),
+                    error: Some(error),
+                });
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+            }
+        }
+    }
+
+    pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), InngestError> {
+        let mut pos = 0;
+        match self.indices.get_mut(id) {
+            None => {
+                self.indices.insert(id.to_string(), 0);
+            }
+            Some(v) => {
+                *v += 1;
                 pos = *v;
             }
         }
 
-        let op = UnhashedOp {
+        let op = Op {
             id: id.to_string(),
             pos,
         };
@@ -78,11 +170,12 @@ impl Step {
                     id: hashed,
                     name: id.to_string(),
                     display_name: id.to_string(),
-                    data: json!({}),
+                    data: None,
                     opts,
+                    error: None,
                 });
 
-                Err(Error::Interupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
             }
         }
     }
@@ -94,13 +187,13 @@ impl Step {
     // TODO: send_events
 }
 
-struct UnhashedOp {
+struct Op {
     id: String,
     pos: u64,
     // TODO: need an opts as map??
 }
 
-impl UnhashedOp {
+impl Op {
     fn hash(&self) -> String {
         let key = if self.pos > 0 {
             format!("{}:{}", self.id, self.pos)
@@ -122,7 +215,7 @@ mod tests {
 
     #[test]
     fn test_op_hash() {
-        let op = UnhashedOp {
+        let op = Op {
             id: "hello".to_string(),
             pos: 0,
         };
@@ -132,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_op_hash_with_position() {
-        let op = UnhashedOp {
+        let op = Op {
             id: "hello".to_string(),
             pos: 1,
         };

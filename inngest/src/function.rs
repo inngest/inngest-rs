@@ -1,6 +1,6 @@
 use crate::{
     event::{Event, InngestEvent},
-    result::Error,
+    result::InngestError,
     step_tool::Step as StepTool,
 };
 use serde::{Deserialize, Serialize};
@@ -40,13 +40,13 @@ impl Default for FunctionOps {
     }
 }
 
-pub struct ServableFn<T: InngestEvent> {
+pub struct ServableFn<T: 'static, E> {
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: fn(&Input<T>, &mut StepTool) -> Result<Value, Error>,
+    pub func: fn(&Input<T>, &mut StepTool) -> Result<Value, E>,
 }
 
-impl<T: InngestEvent> Debug for ServableFn<T> {
+impl<T: InngestEvent, E> Debug for ServableFn<T, E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ServableFn")
             .field("id", &self.opts.id)
@@ -55,7 +55,7 @@ impl<T: InngestEvent> Debug for ServableFn<T> {
     }
 }
 
-impl<T: InngestEvent> ServableFn<T> {
+impl<T, E> ServableFn<T, E> {
     // TODO: prepend app_id
     pub fn slug(&self) -> String {
         slugify(self.opts.id.clone())
@@ -106,11 +106,11 @@ pub enum Trigger {
     },
 }
 
-pub fn create_function<T: InngestEvent>(
+pub fn create_function<T: 'static, E>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: fn(&Input<T>, &mut StepTool) -> Result<Value, Error>,
-) -> ServableFn<T> {
+    func: fn(&Input<T>, &mut StepTool) -> Result<Value, E>,
+) -> ServableFn<T, E> {
     ServableFn {
         opts,
         trigger,

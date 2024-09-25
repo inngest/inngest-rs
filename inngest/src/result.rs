@@ -21,13 +21,14 @@ impl IntoResponse for SdkResponse {
 }
 
 #[derive(Debug)]
-pub enum Error {
+pub enum InngestError {
     Basic(String),
     RetryAt(RetryAfterError),
-    NoRetry(NonRetriableError),
+    NoRetry(NonRetryableError),
 
     // These are not expected to be used by users
-    Interupt(FlowControlError),
+    #[allow(private_interfaces)]
+    Interrupt(FlowControlError),
 }
 
 #[derive(Debug)]
@@ -35,7 +36,7 @@ pub(crate) enum FlowControlError {
     StepGenerator,
 }
 
-impl IntoResponse for Error {
+impl IntoResponse for InngestError {
     fn into_response(self) -> axum::response::Response {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -45,10 +46,13 @@ impl IntoResponse for Error {
     }
 }
 
+#[derive(Serialize, Debug)]
 pub struct StepError {
     pub name: String,
     pub message: String,
     pub stack: Option<String>,
+    // not part of the spec but it's used in the Go SDK to deserialize into the original user error
+    pub data: Option<serde_json::Value>,
 }
 
 pub struct RetryAfterError {
@@ -82,18 +86,18 @@ impl Debug for RetryAfterError {
     }
 }
 
-pub struct NonRetriableError {
+pub struct NonRetryableError {
     pub message: String,
     pub cause: Option<String>,
 }
 
-impl Display for NonRetriableError {
+impl Display for NonRetryableError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Error: {}, not retrying", &self.message)
     }
 }
 
-impl Debug for NonRetriableError {
+impl Debug for NonRetryableError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let cause = match &self.cause {
             None => String::new(),
