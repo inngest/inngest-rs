@@ -67,17 +67,17 @@ impl Step {
                 pos = *v;
             }
         }
-        let op = UnhashedOp {
+        let op = Op {
             id: id.to_string(),
             pos,
         };
         let hashed = op.hash();
 
         if let Some(Some(stored_value)) = self.state.remove(&hashed) {
-            let unwrapped: StepRunResult<T, E> = serde_json::from_value(stored_value)
+            let run_result: StepRunResult<T, E> = serde_json::from_value(stored_value)
                 .map_err(|e| InggestError::Basic(e.to_string()))?;
 
-            match unwrapped {
+            match run_result {
                 StepRunResult::Data(data) => return Ok(data),
                 StepRunResult::Error(err) => return Err(err.into()),
             }
@@ -136,7 +136,7 @@ impl Step {
             }
         }
 
-        let op = UnhashedOp {
+        let op = Op {
             id: id.to_string(),
             pos,
         };
@@ -175,13 +175,13 @@ impl Step {
     // TODO: send_events
 }
 
-struct UnhashedOp {
+struct Op {
     id: String,
     pos: u64,
     // TODO: need an opts as map??
 }
 
-impl UnhashedOp {
+impl Op {
     fn hash(&self) -> String {
         let key = if self.pos > 0 {
             format!("{}:{}", self.id, self.pos)
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_op_hash() {
-        let op = UnhashedOp {
+        let op = Op {
             id: "hello".to_string(),
             pos: 0,
         };
@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn test_op_hash_with_position() {
-        let op = UnhashedOp {
+        let op = Op {
             id: "hello".to_string(),
             pos: 1,
         };
