@@ -124,11 +124,16 @@ fn step_run() -> ServableFn<TestData, InggestError> {
         |_input: &Input<TestData>,
          step: &mut StepTool|
          -> Result<serde_json::Value, InggestError> {
-            println!("In step run function");
-            step.run("some-step-function", || {
-                println!("In step function");
-                Ok::<_, UserLandError>(json!({ "returned from within step.run": true }))
-            })
+            let step_res = step.run(
+                "some-step-function",
+                || -> Result<serde_json::Value, UserLandError> {
+                    Ok(json!({ "returned from within step.run": true }))
+                },
+            )?;
+
+            // do something with the res..
+
+            Ok(step_res)
         },
     )
 }
