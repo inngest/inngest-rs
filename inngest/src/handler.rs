@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -104,18 +104,21 @@ impl<T, E> Handler<T, E> {
 
     pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, InggestError>
     where
-        T: for<'de> Deserialize<'de>,
+        T: for<'de> Deserialize<'de> + Debug,
         E: Into<InggestError>,
     {
         println!("running function: {}, with body {:?}", &query.fn_id, body);
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
+                eprintln!("error parsing run request: {}", err);
                 // TODO: need to surface this error better
                 let msg = InggestError::Basic(format!("error parsing run request: {}", err));
                 return Err(msg);
             }
         };
+
+        println!("data: {:?}", data);
 
         // TODO: retrieve data from API on flag
         if data.use_api {}
@@ -163,23 +166,26 @@ impl<T, E> Handler<T, E> {
                         Ok(SdkResponse { status: 206, body })
                     }
                 },
-                other => Err(other),
+                other => {
+                    println!("--------- error: {:?}", other);
+                    Err(other)
+                }
             },
         }
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct RunRequestBody<T: 'static> {
     ctx: RunRequestCtx,
     event: Event<T>,
     events: Vec<Event<T>>,
     use_api: bool,
-    steps: HashMap<String, Option<String>>,
+    steps: HashMap<String, Option<Value>>,
     version: i32,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct RunRequestCtx {
     attempt: u8,
     disable_immediate_execution: bool,
@@ -190,7 +196,7 @@ struct RunRequestCtx {
     stack: RunRequestCtxStack,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct RunRequestCtxStack {
     current: u32,
     stack: Vec<String>,
