@@ -72,8 +72,6 @@ impl Step {
             pos,
         };
         let hashed = op.hash();
-        println!("hashed: {}", hashed);
-        println!("state: {:?}", self.state);
 
         if let Some(Some(stored_value)) = self.state.remove(&hashed) {
             let unwrapped: StepRunResult<T, E> = serde_json::from_value(stored_value)
