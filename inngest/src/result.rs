@@ -8,6 +8,8 @@ use axum::{
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use crate::step_tool::GeneratorOpCode;
+
 #[derive(Serialize)]
 pub struct SdkResponse {
     pub status: u16,
@@ -48,7 +50,14 @@ pub enum InngestError {
 
 #[derive(Debug)]
 pub(crate) enum FlowControlError {
-    StepGenerator,
+    StepGenerator(Vec<GeneratorOpCode>),
+    StepError(StepError),
+}
+
+impl FlowControlError {
+    pub fn new_step_generator(opcodes: impl Into<Vec<GeneratorOpCode>>) -> Self {
+        FlowControlError::StepGenerator(opcodes.into())
+    }
 }
 
 impl IntoResponse for InngestError {

@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     error::Error,
     time::{self, Duration, SystemTime},
+    vec,
 };
 
 use base16;
@@ -14,7 +15,7 @@ use crate::{
     utils::duration,
 };
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 enum Opcode {
     StepRun,
     Sleep,
@@ -23,7 +24,7 @@ enum Opcode {
     // StepPlanned
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub(crate) struct GeneratorOpCode {
     op: Opcode,
     id: String,
@@ -39,8 +40,6 @@ pub(crate) struct GeneratorOpCode {
 pub struct Step {
     state: HashMap<String, Option<Value>>,
     indices: HashMap<String, u64>,
-    pub(crate) genop: Vec<GeneratorOpCode>,
-    pub(crate) error: Option<StepError>,
 }
 
 #[derive(Deserialize)]
@@ -64,8 +63,6 @@ impl Step {
         Step {
             state: state.clone(),
             indices: HashMap::new(),
-            genop: vec![],
-            error: None,
         }
     }
 
@@ -80,6 +77,7 @@ impl Step {
     {
         let op = self.new_op(id);
         let hashed = op.hash();
+        let mut ops = vec![];
 
         if let Some(Some(stored_value)) = self.state.remove(&hashed) {
             let run_result: StepRunResult<T, E> = serde_json::from_value(stored_value)
@@ -97,7 +95,7 @@ impl Step {
                 let serialized = serde_json::to_value(&result)
                     .map_err(|e| InngestError::Basic(e.to_string()))?;
 
-                self.genop.push(GeneratorOpCode {
+                ops.push(GeneratorOpCode {
                     op: Opcode::StepRun,
                     id: hashed,
                     name: id.to_string(),
@@ -106,7 +104,9 @@ impl Step {
                     opts: HashMap::new(),
                     error: None,
                 });
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator(
+                    ops,
+                )))
             }
             Err(err) => {
                 // TODO: need to handle the following errors returned from the user
@@ -116,13 +116,13 @@ impl Step {
                 let serialized_err =
                     serde_json::to_value(&err).map_err(|e| InngestError::Basic(e.to_string()))?;
 
-                self.error = Some(StepError {
+                let err = StepError {
                     name: "Step failed".to_string(),
                     message: err.to_string(),
                     stack: None,
                     data: Some(serialized_err),
-                });
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                };
+                Err(InngestError::Interrupt(FlowControlError::StepError(err)))
             }
         }
     }
@@ -140,17 +140,17 @@ impl Step {
                 let mut opts = HashMap::new();
                 opts.insert("duration".to_string(), duration::to_string(dur));
 
-                self.genop.push(GeneratorOpCode {
-                    op: Opcode::Sleep,
-                    id: hashed,
-                    name: id.to_string(),
-                    display_name: id.to_string(),
-                    data: None,
-                    opts,
-                    error: None,
-                });
-
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator(
+                    vec![GeneratorOpCode {
+                        op: Opcode::Sleep,
+                        id: hashed,
+                        name: id.to_string(),
+                        display_name: id.to_string(),
+                        data: None,
+                        opts,
+                        error: None,
+                    }],
+                )))
             }
         }
     }
@@ -177,17 +177,17 @@ impl Step {
                 let mut opts = HashMap::new();
                 opts.insert("duration".to_string(), duration::to_string(dur));
 
-                self.genop.push(GeneratorOpCode {
-                    op: Opcode::Sleep,
-                    id: hashed,
-                    name: id.to_string(),
-                    display_name: id.to_string(),
-                    data: None,
-                    opts,
-                    error: None,
-                });
-
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator(
+                    vec![GeneratorOpCode {
+                        op: Opcode::Sleep,
+                        id: hashed,
+                        name: id.to_string(),
+                        display_name: id.to_string(),
+                        data: None,
+                        opts,
+                        error: None,
+                    }],
+                )))
             }
         }
     }

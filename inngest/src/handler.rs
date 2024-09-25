@@ -107,6 +107,9 @@ impl<T, E> Handler<T, E> {
         T: for<'de> Deserialize<'de> + Debug,
         E: Into<InngestError>,
     {
+        println!("running function: {}", query.fn_id);
+        println!("body: {:#?}", body);
+
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
@@ -150,23 +153,26 @@ impl<T, E> Handler<T, E> {
 
             Err(err) => match err.into() {
                 InngestError::Interrupt(flow) => match flow {
-                    FlowControlError::StepGenerator => {
-                        let (status, body) = if step_tool.error.is_some() {
-                            match serde_json::to_value(&step_tool.error) {
-                                Ok(v) => {
-                                    // TODO: check current attempts and see if it can retry or not
-                                    (500, v)
-                                }
-                                Err(err) => {
-                                    return Err(InngestError::Basic(format!(
-                                        "error seralizing step error: {}",
-                                        err
-                                    )));
-                                }
+                    FlowControlError::StepError(step_err) => {
+                        let (status, body) = match serde_json::to_value(step_err) {
+                            Ok(v) => {
+                                // TODO: check current attempts and see if it can retry or not
+                                (500, v)
                             }
-                        } else if step_tool.genop.len() > 0 {
+                            Err(err) => {
+                                return Err(InngestError::Basic(format!(
+                                    "error seralizing step error: {}",
+                                    err
+                                )));
+                            }
+                        };
+
+                        Ok(SdkResponse { status, body })
+                    }
+                    FlowControlError::StepGenerator(ops) => {
+                        let (status, body) = if !ops.is_empty() {
                             // TODO: only expecting one for now, will need to handle multiple
-                            match serde_json::to_value(&step_tool.genop) {
+                            match serde_json::to_value(&ops) {
                                 Ok(v) => (206, v),
                                 Err(err) => {
                                     return Err(InngestError::Basic(format!(
