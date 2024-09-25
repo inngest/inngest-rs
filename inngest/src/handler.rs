@@ -161,7 +161,7 @@ impl<T, E> Handler<T, E> {
                             }
                             Err(err) => {
                                 return Err(InngestError::Basic(format!(
-                                    "error seralizing step error: {}",
+                                    "error serializing step error: {}",
                                     err
                                 )));
                             }
