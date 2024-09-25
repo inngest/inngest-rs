@@ -155,11 +155,11 @@ fn fallible_step_run() -> ServableFn<TestData, InggestError> {
             event: "test/step-run-fallible".to_string(),
             expression: None,
         },
-        |input: &Input<TestData>, step: &mut StepTool| -> Result<serde_json::Value, InggestError> {
-            let some_captured_variable = "captured".to_string();
-
+        |_input: &Input<TestData>,
+         step: &mut StepTool|
+         -> Result<serde_json::Value, InggestError> {
             let step_res = step.run(
-                "some-step-function",
+                "fallible-step-function",
                 || -> Result<serde_json::Value, UserLandError> {
                     let time = SystemTime::now()
                         .duration_since(SystemTime::UNIX_EPOCH)
@@ -171,8 +171,7 @@ fn fallible_step_run() -> ServableFn<TestData, InggestError> {
                         return Err(UserLandError::General("even time".to_string()));
                     }
 
-                    let captured = some_captured_variable.clone();
-                    Ok(json!({ "returned from within step.run": true, "captured": captured }))
+                    Ok(json!({ "returned from within step.run": true }))
                 },
             )?;
 
