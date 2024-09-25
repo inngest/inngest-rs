@@ -101,11 +101,13 @@ fn hello_fn() -> ServableFn<TestData, InngestError> {
             event: "test/hello".to_string(),
             expression: None,
         },
-        |input: &Input<TestData>, _step: &mut StepTool| {
+        |input: &Input<TestData>, step: &mut StepTool| {
             println!("In hello function");
 
             let evt = &input.event;
             println!("Event: {}", evt.name);
+
+            step.sleep_until("sleep", 1727245659000)?;
 
             Ok(json!("test hello"))
         },
