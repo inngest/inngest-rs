@@ -1,11 +1,18 @@
-use std::{collections::HashMap, error::Error, time::Duration};
+use std::{
+    collections::HashMap,
+    error::Error,
+    time::{self, Duration, SystemTime},
+};
 
 use base16;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use sha1::{Digest, Sha1};
 
-use crate::result::{FlowControlError, InngestError, StepError};
+use crate::{
+    result::{FlowControlError, InngestError, StepError},
+    utils::duration,
+};
 
 #[derive(Serialize)]
 enum Opcode {
@@ -71,20 +78,7 @@ impl Step {
         T: for<'a> Deserialize<'a> + Serialize,
         E: for<'a> UserProvidedError<'a>,
     {
-        let mut pos = 0;
-        match self.indices.get_mut(id) {
-            None => {
-                self.indices.insert(id.to_string(), 0);
-            }
-            Some(v) => {
-                *v += 1;
-                pos = *v;
-            }
-        }
-        let op = Op {
-            id: id.to_string(),
-            pos,
-        };
+        let op = self.new_op(id);
         let hashed = op.hash();
 
         if let Some(Some(stored_value)) = self.state.remove(&hashed) {
@@ -134,21 +128,7 @@ impl Step {
     }
 
     pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), InngestError> {
-        let mut pos = 0;
-        match self.indices.get_mut(id) {
-            None => {
-                self.indices.insert(id.to_string(), 0);
-            }
-            Some(v) => {
-                *v += 1;
-                pos = *v;
-            }
-        }
-
-        let op = Op {
-            id: id.to_string(),
-            pos,
-        };
+        let op = self.new_op(id);
         let hashed = op.hash();
 
         match self.state.get(&hashed) {
@@ -158,9 +138,7 @@ impl Step {
             // TODO: if no state exists, we need to signal to sleep
             None => {
                 let mut opts = HashMap::new();
-                // TODO: convert `dur` to string format
-                // ref: https://github.com/RonniSkansing/duration-string
-                opts.insert("duration".to_string(), "10s".to_string());
+                opts.insert("duration".to_string(), duration::to_string(dur));
 
                 self.genop.push(GeneratorOpCode {
                     op: Opcode::Sleep,
@@ -177,7 +155,71 @@ impl Step {
         }
     }
 
-    // TODO: sleep_until
+    pub fn sleep_until(&mut self, id: &str, unix_ts_ms: i64) -> Result<(), InngestError> {
+        let op = self.new_op(id);
+        let hashed = op.hash();
+
+        match self.state.get(&hashed) {
+            Some(_) => Ok(()),
+
+            None => {
+                let systime = self.unix_ts_to_systime(unix_ts_ms);
+                let dur = match systime.duration_since(SystemTime::now()) {
+                    Ok(dur) => dur,
+                    Err(err) => {
+                        return Err(InngestError::Basic(format!(
+                            "error computing duration for sleep: {}",
+                            err
+                        )));
+                    }
+                };
+
+                let mut opts = HashMap::new();
+                opts.insert("duration".to_string(), duration::to_string(dur));
+
+                self.genop.push(GeneratorOpCode {
+                    op: Opcode::Sleep,
+                    id: hashed,
+                    name: id.to_string(),
+                    display_name: id.to_string(),
+                    data: None,
+                    opts,
+                    error: None,
+                });
+
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+            }
+        }
+    }
+
+    fn new_op(&mut self, id: &str) -> Op {
+        let mut pos = 0;
+        match self.indices.get_mut(id) {
+            None => {
+                self.indices.insert(id.to_string(), 0);
+            }
+            Some(v) => {
+                *v += 1;
+                pos = *v;
+            }
+        }
+
+        Op {
+            id: id.to_string(),
+            pos,
+        }
+    }
+
+    fn unix_ts_to_systime(&self, ts: i64) -> SystemTime {
+        if ts >= 0 {
+            time::UNIX_EPOCH + Duration::from_millis(ts as u64)
+        } else {
+            // handle negative timestamp
+            let nts = Duration::from_millis(-ts as u64);
+            time::UNIX_EPOCH - nts
+        }
+    }
+
     // TODO: wait_for_event
     // TODO: invoke
     // TODO: send_event

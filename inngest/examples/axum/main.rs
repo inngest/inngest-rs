@@ -12,10 +12,7 @@ use inngest::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{
-    sync::Arc,
-    time::{Duration, SystemTime},
-};
+use std::{sync::Arc, time::Duration};
 
 #[tokio::main]
 async fn main() {
@@ -87,7 +84,7 @@ fn dummy_fn() -> ServableFn<TestData, InngestError> {
 
             let evt = &input.event;
             println!("Event: {}", evt.name);
-            step.sleep("sleep-test", Duration::from_secs(10))?;
+            step.sleep("sleep-test", Duration::from_secs(3))?;
 
             Ok(json!({ "dummy": true }))
         },
@@ -104,11 +101,13 @@ fn hello_fn() -> ServableFn<TestData, InngestError> {
             event: "test/hello".to_string(),
             expression: None,
         },
-        |input: &Input<TestData>, _step: &mut StepTool| {
+        |input: &Input<TestData>, step: &mut StepTool| {
             println!("In hello function");
 
             let evt = &input.event;
             println!("Event: {}", evt.name);
+
+            step.sleep_until("sleep", 1727245659000)?;
 
             Ok(json!("test hello"))
         },
