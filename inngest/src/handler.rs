@@ -107,7 +107,6 @@ impl<T, E> Handler<T, E> {
         T: for<'de> Deserialize<'de> + Debug,
         E: Into<InggestError>,
     {
-        println!("running function: {}, with body {:?}", &query.fn_id, body);
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
@@ -117,8 +116,6 @@ impl<T, E> Handler<T, E> {
                 return Err(msg);
             }
         };
-
-        println!("data: {:?}", data);
 
         // TODO: retrieve data from API on flag
         if data.use_api {}
@@ -166,10 +163,7 @@ impl<T, E> Handler<T, E> {
                         Ok(SdkResponse { status: 206, body })
                     }
                 },
-                other => {
-                    println!("--------- error: {:?}", other);
-                    Err(other)
-                }
+                other => Err(other),
             },
         }
     }
