@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::default::Default;
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Request {
+pub(crate) struct Request {
     #[serde(rename = "appName")]
     pub app_name: String,
     #[serde(rename = "deployType")]

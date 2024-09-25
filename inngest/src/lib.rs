@@ -5,6 +5,7 @@ pub mod handler;
 pub mod result;
 pub mod sdk;
 pub mod serve;
+pub mod step_tool;
 
 use config::Config;
 use event::{Event, InngestEvent};

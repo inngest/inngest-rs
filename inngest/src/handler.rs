@@ -5,10 +5,11 @@ use serde_json::Value;
 
 use crate::{
     config::Config,
-    event::InngestEvent,
+    event::{Event, InngestEvent},
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
-    result::{Error, SdkResponse},
+    result::{Error, FlowControlError, SdkResponse},
     sdk::Request,
+    step_tool::Step as StepTool,
     Inngest,
 };
 
@@ -102,30 +103,90 @@ impl<T: InngestEvent> Handler<T> {
     }
 
     pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, Error> {
-        match self.funcs.get(&query.fn_id) {
-            None => Err(Error::Basic(format!(
+        let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
+            Ok(res) => res,
+            Err(err) => {
+                // TODO: need to surface this error better
+                let msg = Error::Basic(format!("error parsing run request: {}", err));
+                return Err(msg);
+            }
+        };
+
+        // TODO: retrieve data from API on flag
+        if data.use_api {}
+
+        // find the specified function
+        let Some(func) = self.funcs.get(&query.fn_id) else {
+            return Err(Error::Basic(format!(
                 "no function registered as ID: {}",
                 &query.fn_id
-            ))),
-            Some(func) => match func.event(&body["event"]) {
-                None => Err(Error::Basic("failed to parse event".to_string())),
-                Some(evt) => {
-                    let res = (func.func)(&Input {
-                        event: evt,
-                        events: vec![],
-                        ctx: InputCtx {
-                            fn_id: query.fn_id.clone(),
-                            run_id: String::new(),
-                            step_id: String::new(),
-                        },
-                    });
+            )));
+        };
 
-                    res.map(|v| SdkResponse {
-                        status: 200,
-                        body: v,
-                    })
-                }
+        let input = Input {
+            event: data.event,
+            events: data.events,
+            ctx: InputCtx {
+                fn_id: query.fn_id.clone(),
+                run_id: data.ctx.run_id.clone(),
+                step_id: "step".to_string(),
+            },
+        };
+
+        let mut step_tool = StepTool::new(&data.steps);
+
+        // run the function
+        match (func.func)(&input, &mut step_tool) {
+            Ok(v) => Ok(SdkResponse {
+                status: 200,
+                body: v,
+            }),
+
+            Err(err) => match err {
+                Error::Interupt(flow) => match flow {
+                    FlowControlError::StepGenerator => {
+                        let body = match serde_json::to_value(&step_tool.genop) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                return Err(Error::Basic(format!(
+                                    "error serializing step response: {}",
+                                    err
+                                )));
+                            }
+                        };
+
+                        Ok(SdkResponse { status: 206, body })
+                    }
+                },
+                _ => Err(err),
             },
         }
     }
+}
+
+#[derive(Deserialize)]
+struct RunRequestBody<T: 'static> {
+    ctx: RunRequestCtx,
+    event: Event<T>,
+    events: Vec<Event<T>>,
+    use_api: bool,
+    steps: HashMap<String, Option<String>>,
+    version: i32,
+}
+
+#[derive(Deserialize)]
+struct RunRequestCtx {
+    attempt: u8,
+    disable_immediate_execution: bool,
+    env: String,
+    fn_id: String,
+    run_id: String,
+    step_id: String,
+    stack: RunRequestCtxStack,
+}
+
+#[derive(Deserialize)]
+struct RunRequestCtxStack {
+    current: u32,
+    stack: Vec<String>,
 }
