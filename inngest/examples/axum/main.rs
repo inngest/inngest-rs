@@ -6,8 +6,8 @@ use inngest::{
     event::Event,
     function::{create_function, FunctionOps, Input, ServableFn, Trigger},
     handler::Handler,
-    result::InngestError,
-    serve,
+    result::{InngestError, SimpleError},
+    serve, simplify_err,
     step_tool::{InvokeFunctionOpts, Step as StepTool, WaitForEventOpts},
     Inngest,
 };
@@ -237,7 +237,8 @@ fn fallible_step_run() -> ServableFn<TestData, InngestError> {
                 Err(err) => match err {
                     SimpleError::NoRetry(_) => println!("No retry"),
                     SimpleError::RetryAt(_) => println!("Retry after"),
-                    SimpleError::Basic(msg) => println!("Basic"),
+                    SimpleError::Basic(msg) => println!("Basic {}", msg),
+                    SimpleError::NoInvokeFunctionResponseError => println!("No invoke response"),
                 },
                 Ok(_) => println!("Success"),
             }

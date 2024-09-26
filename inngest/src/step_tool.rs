@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
 
 use crate::{
+    basic_error,
     event::{Event, InngestEvent},
     result::{FlowControlError, InngestError, StepError},
     utils::duration,
@@ -184,7 +185,7 @@ impl Step {
                     opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
@@ -231,7 +232,7 @@ impl Step {
                     opts: wait_opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
@@ -246,13 +247,12 @@ impl Step {
 
         match self.state.get(&hashed) {
             Some(resp) => match resp {
-                None => Err(InngestError::NoInvokeFunctionResponseError),
+                None => Err(InngestError::Simple(
+                    crate::result::SimpleError::NoInvokeFunctionResponseError,
+                )),
                 Some(v) => match serde_json::from_value::<T>(v.clone()) {
                     Ok(res) => Ok(res),
-                    Err(err) => Err(InngestError::Basic(format!(
-                        "error deserializing invoke result: {}",
-                        err
-                    ))),
+                    Err(err) => Err(basic_error!("error deserializing invoke result: {}", err)),
                 },
             },
 
