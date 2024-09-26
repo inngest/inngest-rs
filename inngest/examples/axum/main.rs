@@ -3,15 +3,16 @@ use axum::{
     Router,
 };
 use inngest::{
+    event::Event,
     function::{create_function, FunctionOps, Input, ServableFn, Trigger},
     handler::Handler,
     result::InngestError,
     serve,
-    step_tool::Step as StepTool,
+    step_tool::{Step as StepTool, WaitForEventOpts},
     Inngest,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::{sync::Arc, time::Duration};
 
 #[tokio::main]
@@ -85,6 +86,17 @@ fn dummy_fn() -> ServableFn<TestData, InngestError> {
             let evt = &input.event;
             println!("Event: {}", evt.name);
             step.sleep("sleep-test", Duration::from_secs(3))?;
+
+            let evt: Option<Event<Value>> = step.wait_for_event(
+                "wait",
+                WaitForEventOpts {
+                    event: "test/wait".to_string(),
+                    timeout: Duration::from_secs(60),
+                    if_exp: None,
+                },
+            )?;
+
+            println!("Event: {:?}", evt);
 
             Ok(json!({ "dummy": true }))
         },
