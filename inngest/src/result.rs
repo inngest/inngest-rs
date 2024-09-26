@@ -37,11 +37,12 @@ impl IntoResponse for SdkResponse {
 
 #[derive(Debug)]
 pub enum SimpleError {
+    /// A catch-all error type for business logic errors
     Basic(String),
     RetryAt(RetryAfterError),
     NoRetry(NonRetryableError),
 
-    // Used for invoked functions that don't have a response
+    /// Used for invoked functions that don't have a response
     NoInvokeFunctionResponseError,
 }
 
@@ -59,6 +60,7 @@ impl From<SimpleError> for InngestError {
     }
 }
 
+/// Create a basic error using format! syntax
 #[macro_export]
 macro_rules! basic_error {
     ($($arg:tt)*) => {
@@ -68,7 +70,7 @@ macro_rules! basic_error {
     };
 }
 
-// Correctly propagate the flow control error while providing the user with a simple error
+/// Correctly propagate the flow control error while providing the user with a simple error
 #[macro_export]
 macro_rules! simplify_err {
     ($err:expr) => {
@@ -94,6 +96,7 @@ pub struct FlowControlError {
 }
 
 impl FlowControlError {
+    /// create a new flow control error for a step generator
     pub(crate) fn step_generator() -> Self {
         FlowControlError {
             acknowledged: false,
@@ -101,6 +104,7 @@ impl FlowControlError {
         }
     }
 
+    ///  This must be called before the error is dropped
     pub(crate) fn acknowledge(&mut self) {
         self.acknowledged = true;
     }
