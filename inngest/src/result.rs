@@ -112,8 +112,8 @@ impl Drop for FlowControlError {
             if std::thread::panicking() {
                 // we don't want to panic in a panic, because calling panic within a destructor during
                 // a panic will cause the program to abort
-                println!("Flow control error was not acknowledged");
                 // TODO: also add error! level tracing here
+                println!("Flow control error was not acknowledged");
             } else {
                 panic!("Flow control error was not acknowledged. 
                 This is a developer error. 
