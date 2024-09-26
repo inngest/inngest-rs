@@ -1,7 +1,7 @@
 use crate::{
     basic_error,
     handler::{Handler, RunQueryParams},
-    result::{SimpleError, InngestError, SdkResponse},
+    result::{InngestError, SdkResponse, SimpleError},
 };
 
 use axum::{
