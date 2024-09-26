@@ -10,6 +10,7 @@ use serde_json::Value;
 use sha1::{Digest, Sha1};
 
 use crate::{
+    event::{Event, InngestEvent},
     result::{FlowControlError, InngestError, StepError},
     utils::duration,
 };
@@ -32,8 +33,6 @@ pub(crate) struct GeneratorOpCode {
     display_name: String,
     data: Option<serde_json::Value>,
     opts: HashMap<String, String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<StepError>,
 }
 
 pub struct Step {
@@ -104,7 +103,6 @@ impl Step {
                     display_name: id.to_string(),
                     data: serialized.into(),
                     opts: HashMap::new(),
-                    error: None,
                 });
                 Err(InngestError::Interrupt(FlowControlError::StepGenerator))
             }
@@ -147,7 +145,6 @@ impl Step {
                     display_name: id.to_string(),
                     data: None,
                     opts,
-                    error: None,
                 });
 
                 Err(InngestError::Interrupt(FlowControlError::StepGenerator))
@@ -184,7 +181,45 @@ impl Step {
                     display_name: id.to_string(),
                     data: None,
                     opts,
-                    error: None,
+                });
+
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+            }
+        }
+    }
+
+    pub fn wait_for_event<T: InngestEvent>(
+        &mut self,
+        id: &str,
+        opts: WaitForEventOpts,
+    ) -> Result<Option<Event<T>>, InngestError> {
+        let op = self.new_op(id);
+        let hashed = op.hash();
+
+        match self.state.get(&hashed) {
+            Some(evt) => {
+                match evt {
+                    None => Ok(None),
+
+                    Some(v) => match serde_json::from_value::<Event<T>>(v.clone()) {
+                        Ok(e) => Ok(Some(e)),
+                        Err(err) => {
+                            // TODO: probably should log this properly
+                            println!("error deserializing matched event: {}", err);
+                            Ok(None)
+                        }
+                    },
+                }
+            }
+
+            None => {
+                self.genop.push(GeneratorOpCode {
+                    op: Opcode::WaitForEvent,
+                    id: hashed,
+                    name: id.to_string(),
+                    display_name: id.to_string(),
+                    data: None,
+                    opts: opts.into(),
                 });
 
                 Err(InngestError::Interrupt(FlowControlError::StepGenerator))
@@ -220,10 +255,29 @@ impl Step {
         }
     }
 
-    // TODO: wait_for_event
     // TODO: invoke
     // TODO: send_event
     // TODO: send_events
+}
+
+pub struct WaitForEventOpts {
+    pub event: String,
+    pub timeout: Duration,
+    pub if_exp: Option<String>,
+}
+
+impl Into<HashMap<String, String>> for WaitForEventOpts {
+    fn into(self) -> HashMap<String, String> {
+        let mut opts = HashMap::new();
+        opts.insert("event".to_string(), self.event.clone());
+        opts.insert("timeout".to_string(), duration::to_string(self.timeout));
+
+        if let Some(exp) = &self.if_exp {
+            opts.insert("if".to_string(), exp.clone());
+        }
+
+        opts
+    }
 }
 
 struct Op {
