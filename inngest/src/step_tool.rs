@@ -313,7 +313,6 @@ impl Step {
         }
     }
 
-    // TODO: invoke
     // TODO: send_event
     // TODO: send_events
 }
