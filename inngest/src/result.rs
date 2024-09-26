@@ -50,7 +50,7 @@ pub enum SimpleError {
 pub enum InngestError {
     Simple(SimpleError),
 
-    /// These are not expected to be used by users. These must be propagated to their callers
+    /// Internal only. These are not expected to be used by users. These must be propagated to their callers
     Interrupt(FlowControlError),
 }
 
