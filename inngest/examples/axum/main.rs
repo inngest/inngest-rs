@@ -1,6 +1,6 @@
 use axum::{
     routing::{get, put},
-    Router,
+    Json, Router,
 };
 use inngest::{
     event::Event,
@@ -23,6 +23,7 @@ async fn main() {
     inngest_handler.register_fn(hello_fn());
     inngest_handler.register_fn(step_run());
     inngest_handler.register_fn(fallible_step_run());
+    inngest_handler.register_fn(incorrectly_propagates_error());
 
     let inngest_state = Arc::new(inngest_handler);
 
@@ -56,11 +57,17 @@ impl std::fmt::Display for UserLandError {
 
 impl std::error::Error for UserLandError {}
 
+impl From<UserLandError> for inngest::result::SimpleError {
+    fn from(err: UserLandError) -> inngest::result::SimpleError {
+        match err {
+            UserLandError::General(msg) => inngest::result::SimpleError::Basic(msg),
+        }
+    }
+}
+
 impl From<UserLandError> for inngest::result::InngestError {
     fn from(err: UserLandError) -> inngest::result::InngestError {
-        match err {
-            UserLandError::General(msg) => inngest::result::InngestError::Basic(msg),
-        }
+        inngest::result::InngestError::Simple(err.into())
     }
 }
 
@@ -167,6 +174,39 @@ fn step_run() -> ServableFn<TestData, InngestError> {
     )
 }
 
+fn incorrectly_propagates_error() -> ServableFn<TestData, InngestError> {
+    create_function(
+        FunctionOps {
+            id: "Step run".to_string(),
+            ..Default::default()
+        },
+        Trigger::EventTrigger {
+            event: "test/step-run-incorrect".to_string(),
+            expression: None,
+        },
+        |_input: &Input<TestData>,
+         step: &mut StepTool|
+         -> Result<serde_json::Value, InngestError> {
+            let some_captured_variable = "captured".to_string();
+
+            let res = step.run(
+                "some-step-function",
+                || -> Result<serde_json::Value, UserLandError> {
+                    let captured = some_captured_variable.clone();
+                    Ok(json!({ "returned from within step.run": true, "captured": captured }))
+                },
+            );
+
+            match res {
+                Ok(res) => Ok(res),
+                Err(_) => Ok(Value::String(
+                    "returning value instead of error - whooops".to_string(),
+                )),
+            }
+        },
+    )
+}
+
 fn fallible_step_run() -> ServableFn<TestData, InngestError> {
     create_function(
         FunctionOps {
@@ -178,7 +218,7 @@ fn fallible_step_run() -> ServableFn<TestData, InngestError> {
             expression: None,
         },
         |input: &Input<TestData>, step: &mut StepTool| -> Result<serde_json::Value, InngestError> {
-            let step_res = step.run(
+            let step_res = simplify_err!(step.run(
                 "fallible-step-function",
                 || -> Result<serde_json::Value, UserLandError> {
                     // if even, fail
@@ -191,11 +231,20 @@ fn fallible_step_run() -> ServableFn<TestData, InngestError> {
 
                     Ok(json!({ "returned from within step.run": true }))
                 },
-            )?;
+            ));
+
+            match &step_res {
+                Err(err) => match err {
+                    SimpleError::NoRetry(_) => println!("No retry"),
+                    SimpleError::RetryAt(_) => println!("Retry after"),
+                    SimpleError::Basic(msg) => println!("Basic"),
+                },
+                Ok(_) => println!("Success"),
+            }
 
             // do something with the res..
 
-            Ok(step_res)
+            Ok(step_res?)
         },
     )
 }

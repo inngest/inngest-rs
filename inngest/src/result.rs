@@ -36,22 +36,82 @@ impl IntoResponse for SdkResponse {
 }
 
 #[derive(Debug)]
-pub enum InngestError {
+pub enum SimpleError {
     Basic(String),
     RetryAt(RetryAfterError),
     NoRetry(NonRetryableError),
 
     // Used for invoked functions that don't have a response
     NoInvokeFunctionResponseError,
-
-    // These are not expected to be used by users
-    #[allow(private_interfaces)]
-    Interrupt(FlowControlError),
 }
 
 #[derive(Debug)]
-pub(crate) enum FlowControlError {
+pub enum InngestError {
+    Simple(SimpleError),
+
+    /// These are not expected to be used by users. These must be propagated to their callers
+    Interrupt(FlowControlError),
+}
+
+impl From<SimpleError> for InngestError {
+    fn from(err: SimpleError) -> Self {
+        InngestError::Simple(err)
+    }
+}
+
+#[macro_export]
+macro_rules! basic_error {
+    ($($arg:tt)*) => {
+        $crate::result::InngestError::Simple($crate::result::SimpleError::Basic(
+            format!($($arg)*),
+        ))
+    };
+}
+
+// Correctly propagate the flow control error while providing the user with a simple error
+#[macro_export]
+macro_rules! simplify_err {
+    ($err:expr) => {
+        match $err {
+            Ok(val) => Ok(val),
+            Err(e) => match e {
+                $crate::result::InngestError::Interrupt(_) => return Err(e),
+                $crate::result::InngestError::Simple(s) => Err(s),
+            },
+        }
+    };
+}
+
+#[derive(Debug)]
+pub enum FlowControlVariant {
     StepGenerator,
+}
+
+#[derive(Debug)]
+pub struct FlowControlError {
+    acknowledged: bool,
+    pub variant: FlowControlVariant,
+}
+
+impl FlowControlError {
+    pub(crate) fn step_generator() -> Self {
+        FlowControlError {
+            acknowledged: false,
+            variant: FlowControlVariant::StepGenerator,
+        }
+    }
+
+    pub(crate) fn acknowledge(&mut self) {
+        self.acknowledged = true;
+    }
+}
+
+impl Drop for FlowControlError {
+    fn drop(&mut self) {
+        if !self.acknowledged {
+            panic!("Flow control error was not acknowledged");
+        }
+    }
 }
 
 impl IntoResponse for InngestError {

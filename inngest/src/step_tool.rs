@@ -83,8 +83,8 @@ impl Step {
         let hashed = op.hash();
 
         if let Some(Some(stored_value)) = self.state.remove(&hashed) {
-            let run_result: StepRunResult<T, E> = serde_json::from_value(stored_value)
-                .map_err(|e| InngestError::Basic(e.to_string()))?;
+            let run_result: StepRunResult<T, E> =
+                serde_json::from_value(stored_value).map_err(|e| basic_error!("{}", e))?;
 
             match run_result {
                 StepRunResult::Data(data) => return Ok(data),
@@ -95,8 +95,8 @@ impl Step {
         // If we're here, we need to execute the function
         match f() {
             Ok(result) => {
-                let serialized = serde_json::to_value(&result)
-                    .map_err(|e| InngestError::Basic(e.to_string()))?;
+                let serialized =
+                    serde_json::to_value(&result).map_err(|e| basic_error!("{}", e))?;
 
                 self.genop.push(GeneratorOpCode {
                     op: Opcode::StepRun,
@@ -106,7 +106,7 @@ impl Step {
                     data: serialized.into(),
                     opts: json!({}),
                 });
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::step_generator()))
             }
             Err(err) => {
                 // TODO: need to handle the following errors returned from the user
@@ -114,7 +114,7 @@ impl Step {
                 // - non retriable error
 
                 let serialized_err =
-                    serde_json::to_value(&err).map_err(|e| InngestError::Basic(e.to_string()))?;
+                    serde_json::to_value(&err).map_err(|e| basic_error!("{}", e))?;
 
                 self.error = Some(StepError {
                     name: "Step failed".to_string(),
@@ -122,7 +122,7 @@ impl Step {
                     stack: None,
                     data: Some(serialized_err),
                 });
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
@@ -150,7 +150,7 @@ impl Step {
                     opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
@@ -167,10 +167,7 @@ impl Step {
                 let dur = match systime.duration_since(SystemTime::now()) {
                     Ok(dur) => dur,
                     Err(err) => {
-                        return Err(InngestError::Basic(format!(
-                            "error computing duration for sleep: {}",
-                            err
-                        )));
+                        return Err(basic_error!("error computing duration for sleep: {}", err));
                     }
                 };
 
@@ -280,7 +277,7 @@ impl Step {
                     opts: invoke_opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(InngestError::Interrupt(FlowControlError::step_generator()))
             }
         }
     }

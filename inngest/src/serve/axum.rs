@@ -1,6 +1,7 @@
 use crate::{
+    basic_error,
     handler::{Handler, RunQueryParams},
-    result::{InngestError, SdkResponse},
+    result::{SimpleError, InngestError, SdkResponse},
 };
 
 use axum::{
@@ -40,7 +41,5 @@ where
     T: for<'de> Deserialize<'de> + Debug,
     E: Into<InngestError>,
 {
-    handler
-        .run(query, &body)
-        .map_err(|err| InngestError::Basic(format!("{:?}", err)))
+    handler.run(query, &body)
 }
