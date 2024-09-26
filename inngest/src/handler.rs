@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 use crate::{
     config::Config,
-    event::{Event, InngestEvent},
+    event::Event,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
     result::{FlowControlError, InngestError, SdkResponse},
     sdk::Request,
@@ -139,7 +139,7 @@ impl<T, E> Handler<T, E> {
             },
         };
 
-        let mut step_tool = StepTool::new(&data.steps);
+        let mut step_tool = StepTool::new(&self.inngest.app_id, &data.steps);
 
         // run the function
         match (func.func)(&input, &mut step_tool) {

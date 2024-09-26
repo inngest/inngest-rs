@@ -41,6 +41,9 @@ pub enum InngestError {
     RetryAt(RetryAfterError),
     NoRetry(NonRetryableError),
 
+    // Used for invoked functions that don't have a response
+    NoInvokeFunctionResponseError,
+
     // These are not expected to be used by users
     #[allow(private_interfaces)]
     Interrupt(FlowControlError),

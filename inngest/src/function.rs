@@ -58,6 +58,7 @@ impl<T: InngestEvent, E> Debug for ServableFn<T, E> {
 
 impl<T, E> ServableFn<T, E> {
     // TODO: prepend app_id
+    // TODO: slugify id
     pub fn slug(&self) -> String {
         slugify(self.opts.id.clone())
     }
