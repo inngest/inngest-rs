@@ -6,7 +6,7 @@ use std::{
 
 use base16;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
 
 use crate::{
@@ -32,10 +32,11 @@ pub(crate) struct GeneratorOpCode {
     #[serde(rename(serialize = "displayName"))]
     display_name: String,
     data: Option<serde_json::Value>,
-    opts: HashMap<String, String>,
+    opts: Value,
 }
 
 pub struct Step {
+    app_id: String,
     state: HashMap<String, Option<Value>>,
     indices: HashMap<String, u64>,
     pub(crate) genop: Vec<GeneratorOpCode>,
@@ -59,8 +60,9 @@ where
 }
 
 impl Step {
-    pub fn new(state: &HashMap<String, Option<Value>>) -> Self {
+    pub fn new(app_id: &str, state: &HashMap<String, Option<Value>>) -> Self {
         Step {
+            app_id: app_id.to_string(),
             state: state.clone(),
             indices: HashMap::new(),
             genop: vec![],
@@ -102,7 +104,7 @@ impl Step {
                     name: id.to_string(),
                     display_name: id.to_string(),
                     data: serialized.into(),
-                    opts: HashMap::new(),
+                    opts: json!({}),
                 });
                 Err(InngestError::Interrupt(FlowControlError::StepGenerator))
             }
@@ -135,8 +137,9 @@ impl Step {
 
             // TODO: if no state exists, we need to signal to sleep
             None => {
-                let mut opts = HashMap::new();
-                opts.insert("duration".to_string(), duration::to_string(dur));
+                let opts = json!({
+                    "duration": duration::to_string(dur)
+                });
 
                 self.genop.push(GeneratorOpCode {
                     op: Opcode::Sleep,
@@ -171,8 +174,9 @@ impl Step {
                     }
                 };
 
-                let mut opts = HashMap::new();
-                opts.insert("duration".to_string(), duration::to_string(dur));
+                let opts = json!({
+                    "duration": duration::to_string(dur)
+                });
 
                 self.genop.push(GeneratorOpCode {
                     op: Opcode::Sleep,
@@ -213,13 +217,67 @@ impl Step {
             }
 
             None => {
+                let mut wait_opts = json!({
+                    "event": &opts.event,
+                    "timeout": duration::to_string(opts.timeout),
+                });
+                if let Some(exp) = opts.if_exp {
+                    wait_opts["if"] = json!(&exp);
+                }
+
                 self.genop.push(GeneratorOpCode {
                     op: Opcode::WaitForEvent,
                     id: hashed,
                     name: id.to_string(),
                     display_name: id.to_string(),
                     data: None,
-                    opts: opts.into(),
+                    opts: wait_opts,
+                });
+
+                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+            }
+        }
+    }
+
+    pub fn invoke<T: for<'de> Deserialize<'de>>(
+        &mut self,
+        id: &str,
+        opts: InvokeFunctionOpts,
+    ) -> Result<T, InngestError> {
+        let op = self.new_op(id);
+        let hashed = op.hash();
+
+        match self.state.get(&hashed) {
+            Some(resp) => match resp {
+                None => Err(InngestError::NoInvokeFunctionResponseError),
+                Some(v) => match serde_json::from_value::<T>(v.clone()) {
+                    Ok(res) => Ok(res),
+                    Err(err) => Err(InngestError::Basic(format!(
+                        "error deserializing invoke result: {}",
+                        err
+                    ))),
+                },
+            },
+
+            None => {
+                let mut invoke_opts = json!({
+                    "function_id": &opts.function_id,
+                    "payload": {
+                        "data": &opts.data
+                    }
+                });
+
+                if let Some(timeout) = opts.timeout {
+                    invoke_opts["timeout"] = json!(duration::to_string(timeout));
+                }
+
+                self.genop.push(GeneratorOpCode {
+                    op: Opcode::InvokeFunction,
+                    id: hashed,
+                    name: id.to_string(),
+                    display_name: id.to_string(),
+                    data: None,
+                    opts: invoke_opts,
                 });
 
                 Err(InngestError::Interrupt(FlowControlError::StepGenerator))
@@ -255,7 +313,6 @@ impl Step {
         }
     }
 
-    // TODO: invoke
     // TODO: send_event
     // TODO: send_events
 }
@@ -266,18 +323,10 @@ pub struct WaitForEventOpts {
     pub if_exp: Option<String>,
 }
 
-impl Into<HashMap<String, String>> for WaitForEventOpts {
-    fn into(self) -> HashMap<String, String> {
-        let mut opts = HashMap::new();
-        opts.insert("event".to_string(), self.event.clone());
-        opts.insert("timeout".to_string(), duration::to_string(self.timeout));
-
-        if let Some(exp) = &self.if_exp {
-            opts.insert("if".to_string(), exp.clone());
-        }
-
-        opts
-    }
+pub struct InvokeFunctionOpts {
+    pub function_id: String,
+    pub data: Value,
+    pub timeout: Option<Duration>,
 }
 
 struct Op {

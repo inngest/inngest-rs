@@ -8,7 +8,7 @@ use inngest::{
     handler::Handler,
     result::InngestError,
     serve,
-    step_tool::{Step as StepTool, WaitForEventOpts},
+    step_tool::{InvokeFunctionOpts, Step as StepTool, WaitForEventOpts},
     Inngest,
 };
 use serde::{Deserialize, Serialize};
@@ -86,6 +86,17 @@ fn dummy_fn() -> ServableFn<TestData, InngestError> {
             let evt = &input.event;
             println!("Event: {}", evt.name);
             step.sleep("sleep-test", Duration::from_secs(3))?;
+
+            let resp: Value = step.invoke(
+                "test-invoke",
+                InvokeFunctionOpts {
+                    function_id: fallible_step_run().slug(),
+                    data: json!({ "name": "yolo", "data": 200 }),
+                    timeout: None,
+                },
+            )?;
+
+            println!("Invoke: {:?}", resp);
 
             let evt: Option<Event<Value>> = step.wait_for_event(
                 "wait",
