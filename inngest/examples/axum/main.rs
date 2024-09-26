@@ -87,11 +87,14 @@ fn dummy_fn() -> ServableFn<TestData, InngestError> {
             println!("Event: {}", evt.name);
             step.sleep("sleep-test", Duration::from_secs(3))?;
 
-            let resp: Value = step.invoke("test-invoke", InvokeFunctionOpts{
-                function_id: fallible_step_run().slug(),
-                data: json!({ "name": "yolo", "data": 200 }),
-                timeout: None
-            })?;
+            let resp: Value = step.invoke(
+                "test-invoke",
+                InvokeFunctionOpts {
+                    function_id: fallible_step_run().slug(),
+                    data: json!({ "name": "yolo", "data": 200 }),
+                    timeout: None,
+                },
+            )?;
 
             println!("Invoke: {:?}", resp);
 
