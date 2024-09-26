@@ -1,5 +1,6 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, panic::AssertUnwindSafe};
 
+use futures::FutureExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -103,7 +104,7 @@ impl<T, E> Handler<T, E> {
             .map_err(|_err| "error registering".to_string())
     }
 
-    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, Error>
+    pub async fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, Error>
     where
         T: for<'de> Deserialize<'de> + Debug,
         E: Into<Error>,
@@ -140,57 +141,68 @@ impl<T, E> Handler<T, E> {
             },
         };
 
-        let mut step_tool = StepTool::new(&self.inngest.app_id, &data.steps);
+        let step_tool = StepTool::new(&self.inngest.app_id, &data.steps);
 
-        // run the function
-        match (func.func)(&input, &mut step_tool) {
-            Ok(v) => Ok(SdkResponse {
-                status: 200,
-                body: v,
-            }),
-
-            Err(err) => match err.into() {
-                Error::Interrupt(mut flow) => {
-                    flow.acknowledge();
-
-                    match flow.variant {
-                        FlowControlVariant::StepGenerator => {
-                            let (status, body) = if step_tool.error.is_some() {
-                                match serde_json::to_value(&step_tool.error) {
-                                    Ok(v) => {
-                                        // TODO: check current attempts and see if it can retry or not
-                                        (500, v)
-                                    }
-                                    Err(err) => {
-                                        return Err(basic_error!(
-                                            "error seralizing step error: {}",
-                                            err
-                                        ));
+        match std::panic::catch_unwind(AssertUnwindSafe(|| (func.func)(input, step_tool.clone()))) {
+            Ok(fut) => {
+                match AssertUnwindSafe(fut).catch_unwind().await {
+                    Ok(v) => match v {
+                        Ok(v) => Ok(SdkResponse {
+                            status: 200,
+                            body: v,
+                        }),
+                        Err(err) => match err.into() {
+                            Error::Interrupt(mut flow) => {
+                                flow.acknowledge();
+                                match flow.variant {
+                                    FlowControlVariant::StepGenerator => {
+                                        let (status, body) = if step_tool.error().is_some() {
+                                            match serde_json::to_value(&step_tool.error()) {
+                                                Ok(v) => {
+                                                    // TODO: check current attempts and see if it can retry or not
+                                                    (500, v)
+                                                }
+                                                Err(err) => {
+                                                    return Err(basic_error!(
+                                                        "error seralizing step error: {}",
+                                                        err
+                                                    ));
+                                                }
+                                            }
+                                        } else if step_tool.genop().len() > 0 {
+                                            // TODO: only expecting one for now, will need to handle multiple
+                                            match serde_json::to_value(&step_tool.genop()) {
+                                                Ok(v) => (206, v),
+                                                Err(err) => {
+                                                    return Err(basic_error!(
+                                                        "error serializing step response: {}",
+                                                        err
+                                                    ));
+                                                }
+                                            }
+                                        } else {
+                                            (206, json!("null"))
+                                        };
+                                        Ok(SdkResponse { status, body })
                                     }
                                 }
-                            } else if step_tool.genop.len() > 0 {
-                                // TODO: only expecting one for now, will need to handle multiple
-                                match serde_json::to_value(&step_tool.genop) {
-                                    Ok(v) => (206, v),
-                                    Err(err) => {
-                                        return Err(basic_error!(
-                                            "error serializing step response: {}",
-                                            err
-                                        ));
-                                    }
-                                }
-                            } else {
-                                (206, json!("null"))
-                            };
-
-                            Ok(SdkResponse { status, body })
-                        }
-                    }
+                            }
+                            other => Err(other),
+                        },
+                    },
+                    Err(panic_err) => Ok(SdkResponse {
+                        status: 500,
+                        body: Value::String(format!("panic: {:?}", panic_err)),
+                    }),
                 }
-                other => Err(other),
-            },
+            }
+            Err(panic_err) => Ok(SdkResponse {
+                status: 500,
+                body: Value::String(format!("panic: {:?}", panic_err)),
+            }),
         }
     }
+    // run the function
 }
 
 #[derive(Deserialize, Debug)]

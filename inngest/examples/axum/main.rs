@@ -88,7 +88,7 @@ fn dummy_fn() -> ServableFn<TestData, Error> {
             event: "test/event".to_string(),
             expression: None,
         },
-        |input: &Input<TestData>, step: &mut StepTool| {
+        move |input: Input<TestData>, step: StepTool| async move {
             println!("In dummy function");
 
             let evt = &input.event;
@@ -132,7 +132,7 @@ fn hello_fn() -> ServableFn<TestData, Error> {
             event: "test/hello".to_string(),
             expression: None,
         },
-        |input: &Input<TestData>, step: &mut StepTool| {
+        |input: Input<TestData>, step: StepTool| async move {
             println!("In hello function");
 
             let evt = &input.event;
@@ -145,6 +145,23 @@ fn hello_fn() -> ServableFn<TestData, Error> {
     )
 }
 
+async fn call_some_step_function(_input: Input<TestData>, step: StepTool) -> Result<Value, Error> {
+    let some_captured_variable = "captured".to_string();
+
+    let step_res = step
+        .run("some-step-function", || async {
+            let captured = some_captured_variable.clone();
+            Ok::<_, UserLandError>(
+                json!({ "returned from within step.run": true, "captured": captured }),
+            )
+        })
+        .await?;
+
+    // do something with the res..
+
+    Ok(step_res)
+}
+
 fn step_run() -> ServableFn<TestData, Error> {
     create_function(
         FunctionOps {
@@ -155,21 +172,7 @@ fn step_run() -> ServableFn<TestData, Error> {
             event: "test/step-run".to_string(),
             expression: None,
         },
-        |_input: &Input<TestData>, step: &mut StepTool| -> Result<serde_json::Value, Error> {
-            let some_captured_variable = "captured".to_string();
-
-            let step_res = step.run(
-                "some-step-function",
-                || -> Result<serde_json::Value, UserLandError> {
-                    let captured = some_captured_variable.clone();
-                    Ok(json!({ "returned from within step.run": true, "captured": captured }))
-                },
-            )?;
-
-            // do something with the res..
-
-            Ok(step_res)
-        },
+        call_some_step_function,
     )
 }
 
@@ -183,16 +186,17 @@ fn incorrectly_propagates_error() -> ServableFn<TestData, Error> {
             event: "test/step-run-incorrect".to_string(),
             expression: None,
         },
-        |_input: &Input<TestData>, step: &mut StepTool| -> InngestResult<serde_json::Value> {
+        |_input: Input<TestData>, step: StepTool| async move {
             let some_captured_variable = "captured".to_string();
 
-            let res = step.run(
-                "some-step-function",
-                || -> Result<serde_json::Value, UserLandError> {
+            let res = step
+                .run("some-step-function", || async move {
                     let captured = some_captured_variable.clone();
-                    Ok(json!({ "returned from within step.run": true, "captured": captured }))
-                },
-            );
+                    Ok::<_, UserLandError>(
+                        json!({ "returned from within step.run": true, "captured": captured }),
+                    )
+                })
+                .await;
 
             match res {
                 Ok(res) => Ok(res),
@@ -214,10 +218,9 @@ fn fallible_step_run() -> ServableFn<TestData, Error> {
             event: "test/step-run-fallible".to_string(),
             expression: None,
         },
-        |input: &Input<TestData>, step: &mut StepTool| -> InngestResult<serde_json::Value> {
-            let step_res = into_dev_result!(step.run(
-                "fallible-step-function",
-                || -> Result<serde_json::Value, UserLandError> {
+        |input: Input<TestData>, step: StepTool| async move {
+            let step_res = into_dev_result!(
+                step.run("fallible-step-function", || async move {
                     // if even, fail
                     if input.ctx.attempt % 2 == 0 {
                         return Err(UserLandError::General(format!(
@@ -227,8 +230,9 @@ fn fallible_step_run() -> ServableFn<TestData, Error> {
                     }
 
                     Ok(json!({ "returned from within step.run": true }))
-                },
-            ));
+                },)
+                    .await
+            );
 
             match &step_res {
                 Err(err) => match err {
