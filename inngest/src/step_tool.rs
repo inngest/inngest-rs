@@ -41,9 +41,11 @@ pub(crate) struct GeneratorOpCode {
 mod state {
     use super::{GeneratorOpCode, Op};
     use crate::result::StepError;
-    use parking_lot::RwLock;
     use serde_json::Value;
-    use std::{collections::HashMap, sync::Arc};
+    use std::{
+        collections::HashMap,
+        sync::{Arc, RwLock},
+    };
 
     /// Keep this private so that we can hide the mutex and prevent deadlocks
     struct InnerState {
@@ -84,31 +86,31 @@ mod state {
         }
 
         pub fn new_op(&self, id: &str) -> Op {
-            self.inner.write().new_op(id)
+            self.inner.write().unwrap().new_op(id)
         }
 
         pub fn push_op(&self, op: GeneratorOpCode) {
-            self.inner.write().genop.push(op);
+            self.inner.write().unwrap().genop.push(op);
         }
 
         pub fn genop(&self) -> Vec<GeneratorOpCode> {
-            self.inner.read().genop.clone()
+            self.inner.read().unwrap().genop.clone()
         }
 
         pub fn error(&self) -> Option<StepError> {
-            self.inner.read().error.clone()
+            self.inner.read().unwrap().error.clone()
         }
 
         pub fn push_error(&self, err: StepError) {
-            self.inner.write().error = Some(err);
+            self.inner.write().unwrap().error = Some(err);
         }
 
         pub fn remove(&self, key: &str) -> Option<Option<Value>> {
-            self.inner.write().state.remove(key)
+            self.inner.write().unwrap().state.remove(key)
         }
 
         pub fn get_hashed(&self, key: &str) -> Option<Option<Value>> {
-            self.inner.read().state.get(key).cloned()
+            self.inner.read().unwrap().state.get(key).cloned()
         }
     }
 }
