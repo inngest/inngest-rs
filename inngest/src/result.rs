@@ -52,6 +52,7 @@ pub type DevResult<T> = std::result::Result<T, DevError>;
 /// Result type that includes internal/control flow errors
 pub type InngestResult<T> = std::result::Result<T, Error>;
 
+#[must_use]
 #[derive(Debug)]
 pub enum Error {
     /// Developer facing errors

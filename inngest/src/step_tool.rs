@@ -69,6 +69,7 @@ impl Step {
         }
     }
 
+    #[must_use = "This method returns a Result type, which should be handled and propagated to the caller"]
     pub fn run<T, E>(&mut self, id: &str, f: impl FnOnce() -> Result<T, E>) -> Result<T, Error>
     where
         T: for<'a> Deserialize<'a> + Serialize,
@@ -122,6 +123,7 @@ impl Step {
         }
     }
 
+    #[must_use = "This method returns a Result type, which should be handled and propagated to the caller"]
     pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
@@ -150,6 +152,7 @@ impl Step {
         }
     }
 
+    #[must_use = "This method returns a Result type, which should be handled and propagated to the caller"]
     pub fn sleep_until(&mut self, id: &str, unix_ts_ms: i64) -> Result<(), Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
@@ -184,6 +187,7 @@ impl Step {
         }
     }
 
+    #[must_use = "This method returns a Result type, which should be handled and propagated to the caller"]
     pub fn wait_for_event<T: InngestEvent>(
         &mut self,
         id: &str,
@@ -231,6 +235,7 @@ impl Step {
         }
     }
 
+    #[must_use = "This method returns a Result type, which should be handled and propagated to the caller"]
     pub fn invoke<T: for<'de> Deserialize<'de>>(
         &mut self,
         id: &str,
