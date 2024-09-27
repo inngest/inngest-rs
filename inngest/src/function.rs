@@ -2,7 +2,7 @@ use crate::{
     event::{Event, InngestEvent},
     step_tool::Step as StepTool,
 };
-use futures_core::future::BoxFuture;
+use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use slug::slugify;
