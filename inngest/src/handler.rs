@@ -108,9 +108,6 @@ impl<T, E> Handler<T, E> {
         T: for<'de> Deserialize<'de> + Debug,
         E: Into<Error>,
     {
-        println!("running function: {}", query.fn_id);
-        println!("body: {:#?}", body);
-
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
