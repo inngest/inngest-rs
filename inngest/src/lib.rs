@@ -82,10 +82,7 @@ impl Inngest {
     }
 
     // TODO: make the result return something properly
-    pub async fn send_events<T: InngestEvent>(
-        &self,
-        evts: &[&Event<T>],
-    ) -> Result<(), DevError> {
+    pub async fn send_events<T: InngestEvent>(&self, evts: &[&Event<T>]) -> Result<(), DevError> {
         self.http
             .post("http://127.0.0.1:8288/e/test")
             .json(&evts)
