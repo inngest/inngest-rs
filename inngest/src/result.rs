@@ -46,7 +46,10 @@ pub enum DevError {
     NoRetry(NonRetryableError),
 }
 
+/// Result type that the user (developer) is supposed to interact with
 pub type DevResult<T> = std::result::Result<T, DevError>;
+
+/// Result type that includes internal/control flow errors
 pub type InngestResult<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
