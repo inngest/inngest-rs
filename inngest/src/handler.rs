@@ -8,7 +8,7 @@ use crate::{
     config::Config,
     event::Event,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
-    result::{FlowControlError, FlowControlVariant, InngestError, SdkResponse, SimpleError},
+    result::{DevError, Error, FlowControlError, FlowControlVariant, SdkResponse},
     sdk::Request,
     step_tool::Step as StepTool,
     Inngest,
@@ -103,10 +103,10 @@ impl<T, E> Handler<T, E> {
             .map_err(|_err| "error registering".to_string())
     }
 
-    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, InngestError>
+    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, Error>
     where
         T: for<'de> Deserialize<'de> + Debug,
-        E: Into<InngestError>,
+        E: Into<Error>,
     {
         println!("running function: {}", query.fn_id);
         println!("body: {:#?}", body);
@@ -153,7 +153,7 @@ impl<T, E> Handler<T, E> {
             }),
 
             Err(err) => match err.into() {
-                InngestError::Interrupt(mut flow) => {
+                Error::Interrupt(mut flow) => {
                     flow.acknowledge();
 
                     match flow.variant {

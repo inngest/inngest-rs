@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    error::Error,
+    error::Error as StdError,
     time::{self, Duration, SystemTime},
 };
 
@@ -12,7 +12,7 @@ use sha1::{Digest, Sha1};
 use crate::{
     basic_error,
     event::{Event, InngestEvent},
-    result::{FlowControlError, InngestError, StepError},
+    result::{Error, FlowControlError, StepError},
     utils::duration,
 };
 
@@ -51,12 +51,10 @@ enum StepRunResult<T, E> {
     Error(E),
 }
 
-pub trait UserProvidedError<'a>: Error + Serialize + Deserialize<'a> + Into<InngestError> {}
+pub trait UserProvidedError<'a>: StdError + Serialize + Deserialize<'a> + Into<Error> {}
 
-impl<T> UserProvidedError<'_> for T
-where
-    T: Error + Serialize + Into<InngestError>,
-    T: for<'a> Deserialize<'a>,
+impl<E> UserProvidedError<'_> for E where
+    E: for<'a> Deserialize<'a> + StdError + Serialize + Into<Error>
 {
 }
 
@@ -71,11 +69,7 @@ impl Step {
         }
     }
 
-    pub fn run<T, E>(
-        &mut self,
-        id: &str,
-        f: impl FnOnce() -> Result<T, E>,
-    ) -> Result<T, InngestError>
+    pub fn run<T, E>(&mut self, id: &str, f: impl FnOnce() -> Result<T, E>) -> Result<T, Error>
     where
         T: for<'a> Deserialize<'a> + Serialize,
         E: for<'a> UserProvidedError<'a>,
@@ -107,7 +101,7 @@ impl Step {
                     data: serialized.into(),
                     opts: json!({}),
                 });
-                Err(InngestError::Interrupt(FlowControlError::step_generator()))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
             Err(err) => {
                 // TODO: need to handle the following errors returned from the user
@@ -123,12 +117,12 @@ impl Step {
                     stack: None,
                     data: Some(serialized_err),
                 });
-                Err(InngestError::Interrupt(FlowControlError::step_generator()))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
 
-    pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), InngestError> {
+    pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
 
@@ -151,12 +145,12 @@ impl Step {
                     opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::step_generator()))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
 
-    pub fn sleep_until(&mut self, id: &str, unix_ts_ms: i64) -> Result<(), InngestError> {
+    pub fn sleep_until(&mut self, id: &str, unix_ts_ms: i64) -> Result<(), Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
 
@@ -185,7 +179,7 @@ impl Step {
                     opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::step_generator()))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
@@ -194,7 +188,7 @@ impl Step {
         &mut self,
         id: &str,
         opts: WaitForEventOpts,
-    ) -> Result<Option<Event<T>>, InngestError> {
+    ) -> Result<Option<Event<T>>, Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
 
@@ -232,7 +226,7 @@ impl Step {
                     opts: wait_opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::step_generator()))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
@@ -241,15 +235,13 @@ impl Step {
         &mut self,
         id: &str,
         opts: InvokeFunctionOpts,
-    ) -> Result<T, InngestError> {
+    ) -> Result<T, Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
 
         match self.state.get(&hashed) {
             Some(resp) => match resp {
-                None => Err(InngestError::Simple(
-                    crate::result::SimpleError::NoInvokeFunctionResponseError,
-                )),
+                None => Err(Error::NoInvokeFunctionResponseError),
                 Some(v) => match serde_json::from_value::<T>(v.clone()) {
                     Ok(res) => Ok(res),
                     Err(err) => Err(basic_error!("error deserializing invoke result: {}", err)),
@@ -277,7 +269,7 @@ impl Step {
                     opts: invoke_opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::step_generator()))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
         }
     }

@@ -10,7 +10,7 @@ pub(crate) mod utils;
 
 use config::Config;
 use event::{Event, InngestEvent};
-use result::SimpleError;
+use result::DevError;
 
 #[derive(Clone)]
 pub struct Inngest {
@@ -71,27 +71,27 @@ impl Inngest {
     }
 
     // TODO: make the result return something properly
-    pub async fn send_event<T: InngestEvent>(&self, evt: &Event<T>) -> Result<(), SimpleError> {
+    pub async fn send_event<T: InngestEvent>(&self, evt: &Event<T>) -> Result<(), DevError> {
         self.http
             .post("http://127.0.0.1:8288/e/test")
             .json(&evt)
             .send()
             .await
             .map(|_| ())
-            .map_err(|err| SimpleError::Basic(format!("{}", err)))
+            .map_err(|err| DevError::Basic(format!("{}", err)))
     }
 
     // TODO: make the result return something properly
     pub async fn send_events<T: InngestEvent>(
         &self,
         evts: &[&Event<T>],
-    ) -> Result<(), SimpleError> {
+    ) -> Result<(), DevError> {
         self.http
             .post("http://127.0.0.1:8288/e/test")
             .json(&evts)
             .send()
             .await
             .map(|_| ())
-            .map_err(|err| SimpleError::Basic(format!("{}", err)))
+            .map_err(|err| DevError::Basic(format!("{}", err)))
     }
 }

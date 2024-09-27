@@ -6,7 +6,7 @@ use inngest::{
     event::Event,
     function::{create_function, FunctionOps, Input, ServableFn, Trigger},
     handler::Handler,
-    result::{InngestError, SimpleError},
+    result::{DevError, Error},
     serve, simplify_err,
     step_tool::{InvokeFunctionOpts, Step as StepTool, WaitForEventOpts},
     Inngest,
@@ -57,17 +57,17 @@ impl std::fmt::Display for UserLandError {
 
 impl std::error::Error for UserLandError {}
 
-impl From<UserLandError> for inngest::result::SimpleError {
-    fn from(err: UserLandError) -> inngest::result::SimpleError {
+impl From<UserLandError> for inngest::result::DevError {
+    fn from(err: UserLandError) -> inngest::result::DevError {
         match err {
-            UserLandError::General(msg) => inngest::result::SimpleError::Basic(msg),
+            UserLandError::General(msg) => inngest::result::DevError::Basic(msg),
         }
     }
 }
 
-impl From<UserLandError> for inngest::result::InngestError {
-    fn from(err: UserLandError) -> inngest::result::InngestError {
-        inngest::result::InngestError::Simple(err.into())
+impl From<UserLandError> for inngest::result::Error {
+    fn from(err: UserLandError) -> inngest::result::Error {
+        inngest::result::Error::Dev(err.into())
     }
 }
 
@@ -77,7 +77,7 @@ struct TestData {
     data: u8,
 }
 
-fn dummy_fn() -> ServableFn<TestData, InngestError> {
+fn dummy_fn() -> ServableFn<TestData, Error> {
     create_function(
         FunctionOps {
             id: "Dummy func".to_string(),
@@ -121,7 +121,7 @@ fn dummy_fn() -> ServableFn<TestData, InngestError> {
     )
 }
 
-fn hello_fn() -> ServableFn<TestData, InngestError> {
+fn hello_fn() -> ServableFn<TestData, Error> {
     create_function(
         FunctionOps {
             id: "Hello func".to_string(),
@@ -144,7 +144,7 @@ fn hello_fn() -> ServableFn<TestData, InngestError> {
     )
 }
 
-fn step_run() -> ServableFn<TestData, InngestError> {
+fn step_run() -> ServableFn<TestData, Error> {
     create_function(
         FunctionOps {
             id: "Step run".to_string(),
@@ -154,9 +154,7 @@ fn step_run() -> ServableFn<TestData, InngestError> {
             event: "test/step-run".to_string(),
             expression: None,
         },
-        |_input: &Input<TestData>,
-         step: &mut StepTool|
-         -> Result<serde_json::Value, InngestError> {
+        |_input: &Input<TestData>, step: &mut StepTool| -> Result<serde_json::Value, Error> {
             let some_captured_variable = "captured".to_string();
 
             let step_res = step.run(
@@ -174,7 +172,7 @@ fn step_run() -> ServableFn<TestData, InngestError> {
     )
 }
 
-fn incorrectly_propagates_error() -> ServableFn<TestData, InngestError> {
+fn incorrectly_propagates_error() -> ServableFn<TestData, Error> {
     create_function(
         FunctionOps {
             id: "Step run".to_string(),
@@ -184,9 +182,7 @@ fn incorrectly_propagates_error() -> ServableFn<TestData, InngestError> {
             event: "test/step-run-incorrect".to_string(),
             expression: None,
         },
-        |_input: &Input<TestData>,
-         step: &mut StepTool|
-         -> Result<serde_json::Value, InngestError> {
+        |_input: &Input<TestData>, step: &mut StepTool| -> Result<serde_json::Value, Error> {
             let some_captured_variable = "captured".to_string();
 
             let res = step.run(
@@ -207,7 +203,7 @@ fn incorrectly_propagates_error() -> ServableFn<TestData, InngestError> {
     )
 }
 
-fn fallible_step_run() -> ServableFn<TestData, InngestError> {
+fn fallible_step_run() -> ServableFn<TestData, Error> {
     create_function(
         FunctionOps {
             id: "Fallible Step run".to_string(),
@@ -217,7 +213,7 @@ fn fallible_step_run() -> ServableFn<TestData, InngestError> {
             event: "test/step-run-fallible".to_string(),
             expression: None,
         },
-        |input: &Input<TestData>, step: &mut StepTool| -> Result<serde_json::Value, InngestError> {
+        |input: &Input<TestData>, step: &mut StepTool| -> Result<serde_json::Value, Error> {
             let step_res = simplify_err!(step.run(
                 "fallible-step-function",
                 || -> Result<serde_json::Value, UserLandError> {
@@ -235,10 +231,9 @@ fn fallible_step_run() -> ServableFn<TestData, InngestError> {
 
             match &step_res {
                 Err(err) => match err {
-                    SimpleError::NoRetry(_) => println!("No retry"),
-                    SimpleError::RetryAt(_) => println!("Retry after"),
-                    SimpleError::Basic(msg) => println!("Basic {}", msg),
-                    SimpleError::NoInvokeFunctionResponseError => println!("No invoke response"),
+                    DevError::NoRetry(_) => println!("No retry"),
+                    DevError::RetryAt(_) => println!("Retry after"),
+                    DevError::Basic(msg) => println!("Basic {}", msg),
                 },
                 Ok(_) => println!("Success"),
             }

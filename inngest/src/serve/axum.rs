@@ -1,7 +1,7 @@
 use crate::{
     basic_error,
     handler::{Handler, RunQueryParams},
-    result::{InngestError, SdkResponse, SimpleError},
+    result::{Error, SdkResponse, DevError},
 };
 
 use axum::{
@@ -36,10 +36,10 @@ pub async fn invoke<T, E>(
     Query(query): Query<RunQueryParams>,
     State(handler): State<Arc<Handler<T, E>>>,
     Json(body): Json<Value>,
-) -> Result<SdkResponse, InngestError>
+) -> Result<SdkResponse, Error>
 where
     T: for<'de> Deserialize<'de> + Debug,
-    E: Into<InngestError>,
+    E: Into<Error>,
 {
     handler.run(query, &body)
 }

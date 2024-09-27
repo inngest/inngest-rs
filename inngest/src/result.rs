@@ -35,28 +35,30 @@ impl IntoResponse for SdkResponse {
     }
 }
 
+/// Error type that the user (developer) is supposed to interact with
 #[derive(Debug)]
-pub enum SimpleError {
+pub enum DevError {
     /// A catch-all error type for business logic errors
     Basic(String),
+    /// Error that controls how the function will be retried
     RetryAt(RetryAfterError),
+    /// Error that does not allow the function to be retried
     NoRetry(NonRetryableError),
-
-    /// Used for invoked functions that don't have a response
-    NoInvokeFunctionResponseError,
 }
 
 #[derive(Debug)]
-pub enum InngestError {
-    Simple(SimpleError),
-
+pub enum Error {
+    /// Developer facing errors
+    Dev(DevError),
+    /// Internal only. Used for invoked functions that don't have a response
+    NoInvokeFunctionResponseError,
     /// Internal only. These are not expected to be used by users. These must be propagated to their callers
     Interrupt(FlowControlError),
 }
 
-impl From<SimpleError> for InngestError {
-    fn from(err: SimpleError) -> Self {
-        InngestError::Simple(err)
+impl From<DevError> for Error {
+    fn from(err: DevError) -> Self {
+        Error::Dev(err)
     }
 }
 
@@ -64,7 +66,7 @@ impl From<SimpleError> for InngestError {
 #[macro_export]
 macro_rules! basic_error {
     ($($arg:tt)*) => {
-        $crate::result::InngestError::Simple($crate::result::SimpleError::Basic(
+        $crate::result::Error::Dev($crate::result::DevError::Basic(
             format!($($arg)*),
         ))
     };
@@ -77,8 +79,9 @@ macro_rules! simplify_err {
         match $err {
             Ok(val) => Ok(val),
             Err(e) => match e {
-                $crate::result::InngestError::Interrupt(_) => return Err(e),
-                $crate::result::InngestError::Simple(s) => Err(s),
+                $crate::result::Error::Interrupt(_)
+                | $crate::result::Error::NoInvokeFunctionResponseError => return Err(e),
+                $crate::result::Error::Dev(s) => Err(s),
             },
         }
     };
@@ -127,7 +130,7 @@ impl Drop for FlowControlError {
     }
 }
 
-impl IntoResponse for InngestError {
+impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
