@@ -46,6 +46,9 @@ pub enum DevError {
     NoRetry(NonRetryableError),
 }
 
+pub type DevResult<T> = std::result::Result<T, DevError>;
+pub type InngestResult<T> = std::result::Result<T, Error>;
+
 #[derive(Debug)]
 pub enum Error {
     /// Developer facing errors
@@ -74,7 +77,7 @@ macro_rules! basic_error {
 
 /// Correctly propagate the flow control error while providing the user with a simple error
 #[macro_export]
-macro_rules! simplify_err {
+macro_rules! into_dev_result {
     ($err:expr) => {
         match $err {
             Ok(val) => Ok(val),

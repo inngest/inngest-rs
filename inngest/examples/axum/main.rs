@@ -6,8 +6,9 @@ use inngest::{
     event::Event,
     function::{create_function, FunctionOps, Input, ServableFn, Trigger},
     handler::Handler,
-    result::{DevError, Error},
-    serve, simplify_err,
+    into_dev_result,
+    result::{DevError, Error, InngestResult},
+    serve,
     step_tool::{InvokeFunctionOpts, Step as StepTool, WaitForEventOpts},
     Inngest,
 };
@@ -182,7 +183,7 @@ fn incorrectly_propagates_error() -> ServableFn<TestData, Error> {
             event: "test/step-run-incorrect".to_string(),
             expression: None,
         },
-        |_input: &Input<TestData>, step: &mut StepTool| -> Result<serde_json::Value, Error> {
+        |_input: &Input<TestData>, step: &mut StepTool| -> InngestResult<serde_json::Value> {
             let some_captured_variable = "captured".to_string();
 
             let res = step.run(
@@ -213,8 +214,8 @@ fn fallible_step_run() -> ServableFn<TestData, Error> {
             event: "test/step-run-fallible".to_string(),
             expression: None,
         },
-        |input: &Input<TestData>, step: &mut StepTool| -> Result<serde_json::Value, Error> {
-            let step_res = simplify_err!(step.run(
+        |input: &Input<TestData>, step: &mut StepTool| -> InngestResult<serde_json::Value> {
+            let step_res = into_dev_result!(step.run(
                 "fallible-step-function",
                 || -> Result<serde_json::Value, UserLandError> {
                     // if even, fail
