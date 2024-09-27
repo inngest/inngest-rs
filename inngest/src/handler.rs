@@ -4,10 +4,11 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::{
+    basic_error,
     config::Config,
     event::Event,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
-    result::{FlowControlError, InngestError, SdkResponse},
+    result::{DevError, Error, FlowControlError, FlowControlVariant, SdkResponse},
     sdk::Request,
     step_tool::Step as StepTool,
     Inngest,
@@ -102,16 +103,16 @@ impl<T, E> Handler<T, E> {
             .map_err(|_err| "error registering".to_string())
     }
 
-    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, InngestError>
+    pub fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, Error>
     where
         T: for<'de> Deserialize<'de> + Debug,
-        E: Into<InngestError>,
+        E: Into<Error>,
     {
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
                 // TODO: need to surface this error better
-                let msg = InngestError::Basic(format!("error parsing run request: {}", err));
+                let msg = basic_error!("error parsing run request: {}", err);
                 return Err(msg);
             }
         };
@@ -121,10 +122,10 @@ impl<T, E> Handler<T, E> {
 
         // find the specified function
         let Some(func) = self.funcs.get(&query.fn_id) else {
-            return Err(InngestError::Basic(format!(
+            return Err(basic_error!(
                 "no function registered as ID: {}",
                 &query.fn_id
-            )));
+            ));
         };
 
         let input = Input {
@@ -149,39 +150,43 @@ impl<T, E> Handler<T, E> {
             }),
 
             Err(err) => match err.into() {
-                InngestError::Interrupt(flow) => match flow {
-                    FlowControlError::StepGenerator => {
-                        let (status, body) = if step_tool.error.is_some() {
-                            match serde_json::to_value(&step_tool.error) {
-                                Ok(v) => {
-                                    // TODO: check current attempts and see if it can retry or not
-                                    (500, v)
-                                }
-                                Err(err) => {
-                                    return Err(InngestError::Basic(format!(
-                                        "error seralizing step error: {}",
-                                        err
-                                    )));
-                                }
-                            }
-                        } else if step_tool.genop.len() > 0 {
-                            // TODO: only expecting one for now, will need to handle multiple
-                            match serde_json::to_value(&step_tool.genop) {
-                                Ok(v) => (206, v),
-                                Err(err) => {
-                                    return Err(InngestError::Basic(format!(
-                                        "error serializing step response: {}",
-                                        err
-                                    )));
-                                }
-                            }
-                        } else {
-                            (206, json!("null"))
-                        };
+                Error::Interrupt(mut flow) => {
+                    flow.acknowledge();
 
-                        Ok(SdkResponse { status, body })
+                    match flow.variant {
+                        FlowControlVariant::StepGenerator => {
+                            let (status, body) = if step_tool.error.is_some() {
+                                match serde_json::to_value(&step_tool.error) {
+                                    Ok(v) => {
+                                        // TODO: check current attempts and see if it can retry or not
+                                        (500, v)
+                                    }
+                                    Err(err) => {
+                                        return Err(basic_error!(
+                                            "error seralizing step error: {}",
+                                            err
+                                        ));
+                                    }
+                                }
+                            } else if step_tool.genop.len() > 0 {
+                                // TODO: only expecting one for now, will need to handle multiple
+                                match serde_json::to_value(&step_tool.genop) {
+                                    Ok(v) => (206, v),
+                                    Err(err) => {
+                                        return Err(basic_error!(
+                                            "error serializing step response: {}",
+                                            err
+                                        ));
+                                    }
+                                }
+                            } else {
+                                (206, json!("null"))
+                            };
+
+                            Ok(SdkResponse { status, body })
+                        }
                     }
-                },
+                }
                 other => Err(other),
             },
         }

@@ -35,26 +35,109 @@ impl IntoResponse for SdkResponse {
     }
 }
 
+/// Error type that the user (developer) is supposed to interact with
 #[derive(Debug)]
-pub enum InngestError {
+pub enum DevError {
+    /// A catch-all error type for business logic errors
     Basic(String),
+    /// Error that controls how the function will be retried
     RetryAt(RetryAfterError),
+    /// Error that does not allow the function to be retried
     NoRetry(NonRetryableError),
+}
 
-    // Used for invoked functions that don't have a response
+/// Result type that the user (developer) is supposed to interact with
+pub type DevResult<T> = std::result::Result<T, DevError>;
+
+/// Result type that includes internal/control flow errors
+pub type InngestResult<T> = std::result::Result<T, Error>;
+
+#[must_use]
+#[derive(Debug)]
+pub enum Error {
+    /// Developer facing errors
+    Dev(DevError),
+    /// Internal only. Used for invoked functions that don't have a response
     NoInvokeFunctionResponseError,
-
-    // These are not expected to be used by users
-    #[allow(private_interfaces)]
+    /// Internal only. These are not expected to be used by users. These must be propagated to their callers
     Interrupt(FlowControlError),
 }
 
+impl From<DevError> for Error {
+    fn from(err: DevError) -> Self {
+        Error::Dev(err)
+    }
+}
+
+/// Create a basic error using format! syntax
+#[macro_export]
+macro_rules! basic_error {
+    ($($arg:tt)*) => {
+        $crate::result::Error::Dev($crate::result::DevError::Basic(
+            format!($($arg)*),
+        ))
+    };
+}
+
+/// Correctly propagate the flow control error while providing the user with a simple error
+#[macro_export]
+macro_rules! into_dev_result {
+    ($err:expr) => {
+        match $err {
+            Ok(val) => Ok(val),
+            Err(e) => match e {
+                $crate::result::Error::Interrupt(_)
+                | $crate::result::Error::NoInvokeFunctionResponseError => return Err(e),
+                $crate::result::Error::Dev(s) => Err(s),
+            },
+        }
+    };
+}
+
 #[derive(Debug)]
-pub(crate) enum FlowControlError {
+pub enum FlowControlVariant {
     StepGenerator,
 }
 
-impl IntoResponse for InngestError {
+#[derive(Debug)]
+pub struct FlowControlError {
+    acknowledged: bool,
+    pub variant: FlowControlVariant,
+}
+
+impl FlowControlError {
+    /// create a new flow control error for a step generator
+    pub(crate) fn step_generator() -> Self {
+        FlowControlError {
+            acknowledged: false,
+            variant: FlowControlVariant::StepGenerator,
+        }
+    }
+
+    ///  This must be called before the error is dropped
+    pub(crate) fn acknowledge(&mut self) {
+        self.acknowledged = true;
+    }
+}
+
+impl Drop for FlowControlError {
+    fn drop(&mut self) {
+        if !self.acknowledged {
+            if std::thread::panicking() {
+                // we don't want to panic in a panic, because calling panic within a destructor during
+                // a panic will cause the program to abort
+                // TODO: also add error! level tracing here
+                println!("Flow control error was not acknowledged");
+            } else {
+                panic!("Flow control error was not acknowledged. 
+                This is a developer error. 
+                You should ensure that you return the flow control error within Inngest funcitons to the caller as soon as they're received.");
+            }
+        }
+    }
+}
+
+impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         (
             StatusCode::INTERNAL_SERVER_ERROR,

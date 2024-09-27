@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    error::Error,
+    error::Error as StdError,
     time::{self, Duration, SystemTime},
 };
 
@@ -10,8 +10,9 @@ use serde_json::{json, Value};
 use sha1::{Digest, Sha1};
 
 use crate::{
+    basic_error,
     event::{Event, InngestEvent},
-    result::{FlowControlError, InngestError, StepError},
+    result::{Error, FlowControlError, StepError},
     utils::duration,
 };
 
@@ -50,12 +51,10 @@ enum StepRunResult<T, E> {
     Error(E),
 }
 
-pub trait UserProvidedError<'a>: Error + Serialize + Deserialize<'a> + Into<InngestError> {}
+pub trait UserProvidedError<'a>: StdError + Serialize + Deserialize<'a> + Into<Error> {}
 
-impl<T> UserProvidedError<'_> for T
-where
-    T: Error + Serialize + Into<InngestError>,
-    T: for<'a> Deserialize<'a>,
+impl<E> UserProvidedError<'_> for E where
+    E: for<'a> Deserialize<'a> + StdError + Serialize + Into<Error>
 {
 }
 
@@ -70,11 +69,8 @@ impl Step {
         }
     }
 
-    pub fn run<T, E>(
-        &mut self,
-        id: &str,
-        f: impl FnOnce() -> Result<T, E>,
-    ) -> Result<T, InngestError>
+    #[must_use = "This method returns a Result type, which should be handled and propagated to the caller"]
+    pub fn run<T, E>(&mut self, id: &str, f: impl FnOnce() -> Result<T, E>) -> Result<T, Error>
     where
         T: for<'a> Deserialize<'a> + Serialize,
         E: for<'a> UserProvidedError<'a>,
@@ -83,8 +79,8 @@ impl Step {
         let hashed = op.hash();
 
         if let Some(Some(stored_value)) = self.state.remove(&hashed) {
-            let run_result: StepRunResult<T, E> = serde_json::from_value(stored_value)
-                .map_err(|e| InngestError::Basic(e.to_string()))?;
+            let run_result: StepRunResult<T, E> =
+                serde_json::from_value(stored_value).map_err(|e| basic_error!("{}", e))?;
 
             match run_result {
                 StepRunResult::Data(data) => return Ok(data),
@@ -95,8 +91,8 @@ impl Step {
         // If we're here, we need to execute the function
         match f() {
             Ok(result) => {
-                let serialized = serde_json::to_value(&result)
-                    .map_err(|e| InngestError::Basic(e.to_string()))?;
+                let serialized =
+                    serde_json::to_value(&result).map_err(|e| basic_error!("{}", e))?;
 
                 self.genop.push(GeneratorOpCode {
                     op: Opcode::StepRun,
@@ -106,7 +102,7 @@ impl Step {
                     data: serialized.into(),
                     opts: json!({}),
                 });
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
             Err(err) => {
                 // TODO: need to handle the following errors returned from the user
@@ -114,7 +110,7 @@ impl Step {
                 // - non retriable error
 
                 let serialized_err =
-                    serde_json::to_value(&err).map_err(|e| InngestError::Basic(e.to_string()))?;
+                    serde_json::to_value(&err).map_err(|e| basic_error!("{}", e))?;
 
                 self.error = Some(StepError {
                     name: "Step failed".to_string(),
@@ -122,12 +118,13 @@ impl Step {
                     stack: None,
                     data: Some(serialized_err),
                 });
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
 
-    pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), InngestError> {
+    #[must_use = "This method returns a Result type, which should be handled and propagated to the caller"]
+    pub fn sleep(&mut self, id: &str, dur: Duration) -> Result<(), Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
 
@@ -150,12 +147,13 @@ impl Step {
                     opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
 
-    pub fn sleep_until(&mut self, id: &str, unix_ts_ms: i64) -> Result<(), InngestError> {
+    #[must_use = "This method returns a Result type, which should be handled and propagated to the caller"]
+    pub fn sleep_until(&mut self, id: &str, unix_ts_ms: i64) -> Result<(), Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
 
@@ -167,10 +165,7 @@ impl Step {
                 let dur = match systime.duration_since(SystemTime::now()) {
                     Ok(dur) => dur,
                     Err(err) => {
-                        return Err(InngestError::Basic(format!(
-                            "error computing duration for sleep: {}",
-                            err
-                        )));
+                        return Err(basic_error!("error computing duration for sleep: {}", err));
                     }
                 };
 
@@ -187,16 +182,17 @@ impl Step {
                     opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
 
+    #[must_use = "This method returns a Result type, which should be handled and propagated to the caller"]
     pub fn wait_for_event<T: InngestEvent>(
         &mut self,
         id: &str,
         opts: WaitForEventOpts,
-    ) -> Result<Option<Event<T>>, InngestError> {
+    ) -> Result<Option<Event<T>>, Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
 
@@ -234,28 +230,26 @@ impl Step {
                     opts: wait_opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
 
+    #[must_use = "This method returns a Result type, which should be handled and propagated to the caller"]
     pub fn invoke<T: for<'de> Deserialize<'de>>(
         &mut self,
         id: &str,
         opts: InvokeFunctionOpts,
-    ) -> Result<T, InngestError> {
+    ) -> Result<T, Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
 
         match self.state.get(&hashed) {
             Some(resp) => match resp {
-                None => Err(InngestError::NoInvokeFunctionResponseError),
+                None => Err(Error::NoInvokeFunctionResponseError),
                 Some(v) => match serde_json::from_value::<T>(v.clone()) {
                     Ok(res) => Ok(res),
-                    Err(err) => Err(InngestError::Basic(format!(
-                        "error deserializing invoke result: {}",
-                        err
-                    ))),
+                    Err(err) => Err(basic_error!("error deserializing invoke result: {}", err)),
                 },
             },
 
@@ -280,7 +274,7 @@ impl Step {
                     opts: invoke_opts,
                 });
 
-                Err(InngestError::Interrupt(FlowControlError::StepGenerator))
+                Err(Error::Interrupt(FlowControlError::step_generator()))
             }
         }
     }
