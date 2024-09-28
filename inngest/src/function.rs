@@ -2,10 +2,11 @@ use crate::{
     event::{Event, InngestEvent},
     step_tool::Step as StepTool,
 };
+use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use slug::slugify;
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, future::Future};
 
 // NOTE: should T have Copy trait too?
 // so it can do something like `input.event` without moving.
@@ -41,10 +42,13 @@ impl Default for FunctionOps {
     }
 }
 
+type Func<T, E> =
+    dyn Fn(Input<T>, StepTool) -> BoxFuture<'static, Result<Value, E>> + Send + Sync + 'static;
+
 pub struct ServableFn<T: 'static, E> {
     pub opts: FunctionOps,
     pub trigger: Trigger,
-    pub func: fn(&Input<T>, &mut StepTool) -> Result<Value, E>,
+    pub func: Box<Func<T, E>>,
 }
 
 impl<T: InngestEvent, E> Debug for ServableFn<T, E> {
@@ -108,14 +112,19 @@ pub enum Trigger {
     },
 }
 
-pub fn create_function<T: 'static, E>(
+pub fn create_function<T: 'static, E, F>(
     opts: FunctionOps,
     trigger: Trigger,
-    func: fn(&Input<T>, &mut StepTool) -> Result<Value, E>,
-) -> ServableFn<T, E> {
+    func: impl Fn(Input<T>, StepTool) -> F + Send + Sync + 'static,
+) -> ServableFn<T, E>
+where
+    F: Future<Output = Result<Value, E>> + Send + Sync + 'static,
+{
+    use futures::future::FutureExt;
+
     ServableFn {
         opts,
         trigger,
-        func,
+        func: Box::new(move |input, step| func(input, step).boxed()),
     }
 }

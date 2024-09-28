@@ -41,5 +41,5 @@ where
     T: for<'de> Deserialize<'de> + Debug,
     E: Into<Error>,
 {
-    handler.run(query, &body)
+    handler.run(query, &body).await
 }

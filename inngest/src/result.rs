@@ -147,7 +147,7 @@ impl IntoResponse for Error {
     }
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct StepError {
     pub name: String,
     pub message: String,
