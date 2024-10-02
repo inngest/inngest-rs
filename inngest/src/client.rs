@@ -1,9 +1,12 @@
+use url::Url;
+
 use crate::{
     config::Config,
     event::{Event, InngestEvent},
     result::DevError,
 };
 
+const EVENT_API_ORIGIN_DEV: &str = "http://127.0.0.1:8288";
 const EVENT_API_ORIGIN: &str = "https://inn.gs";
 
 #[derive(Clone)]
@@ -24,9 +27,11 @@ impl Inngest {
         let event_api_origin = Config::event_api_origin();
         let event_key = Config::event_key();
         let env = Config::env();
-        // TODO: allow updating dev server url here
-        // https://www.inngest.com/docs/sdk/environment-variables#inngest-dev
-        let dev = Config::dev().map(|v| v);
+        // if the value is a URL, use it. otherwise set a default URL
+        let dev = Config::dev().map(|v| match Url::parse(&v) {
+            Ok(val) => val.to_string(),
+            Err(_) => EVENT_API_ORIGIN_DEV.to_string()
+        });
 
         Inngest {
             app_id: app_id.to_string(),
@@ -60,7 +65,11 @@ impl Inngest {
     }
 
     pub fn dev(mut self, dev: &str) -> Self {
-        self.dev = Some(dev.to_string());
+        let url = match Url::parse(dev) {
+            Ok(val) =>  Some(val.to_string()),
+            Err(_) => Some(EVENT_API_ORIGIN_DEV.to_string())
+        };
+        self.dev = url;
         self
     }
 

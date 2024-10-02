@@ -25,3 +25,4 @@ futures = "0.3.30"
 # used for step encoding in SDK
 sha1 = "0.10.6"
 base16 = "0.2.1"
+url = "2.5.2"
