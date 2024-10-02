@@ -45,13 +45,46 @@ impl<T, E> Handler<T, E> {
         }
     }
 
+    pub fn signing_key(mut self, key: &str) -> Self {
+        self.signing_key = Some(key.to_string());
+        self
+    }
+
+    pub fn serve_origin(mut self, origin: &str) -> Self {
+        self.serve_origin = Some(origin.to_string());
+        self
+    }
+
+    pub fn serve_path(mut self, path: &str) -> Self {
+        self.serve_path = Some(path.to_string());
+        self
+    }
+
     pub fn register_fn(&mut self, func: ServableFn<T, E>) {
         self.funcs.insert(func.slug(), func);
     }
 
+    fn app_serve_origin(&self, _headers: &HashMap<String, String>) -> String {
+        if let Some(origin) = self.serve_origin.clone() {
+            return origin;
+        }
+        // if let Some(host) = headers.get("host") {
+        //     return host.to_string();
+        // }
+
+        "http://127.0.0.1:3000".to_string()
+    }
+
+    fn app_serve_path(&self) -> String {
+        if let Some(path) = self.serve_path.clone() {
+            return path;
+        }
+        "/api/inngest".to_string()
+    }
+
     pub async fn sync(
         &self,
-        _headers: &HashMap<String, String>,
+        headers: &HashMap<String, String>,
         framework: &str,
     ) -> Result<(), String> {
         let functions: Vec<Function> = self
