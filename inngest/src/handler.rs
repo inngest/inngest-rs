@@ -13,6 +13,7 @@ use crate::{
     result::{Error, FlowControlVariant, SdkResponse},
     sdk::Request,
     step_tool::Step as StepTool,
+    header
 };
 
 pub struct Handler<T: 'static, E> {
@@ -87,6 +88,14 @@ impl<T, E> Handler<T, E> {
         headers: &HashMap<String, String>,
         framework: &str,
     ) -> Result<(), String> {
+        let kind = match headers.get(header::SERVER_KIND) {
+            Some(val) => match val.as_str() {
+                "cloud" => Kind::Cloud,
+                _ => Kind::Dev
+            },
+            None => Kind::Dev
+        };
+
         let functions: Vec<Function> = self
             .funcs
             .iter()
@@ -99,8 +108,9 @@ impl<T, E> Handler<T, E> {
                         name: "step".to_string(),
                         runtime: StepRuntime {
                             url: format!(
-                                // TODO: fix the URL
-                                "http://127.0.0.1:3000/api/inngest?fnId={}&step=step",
+                                "{}{}?fnId={}&step=step",
+                                self.app_serve_origin(headers),
+                                self.app_serve_path(),
                                 f.slug()
                             ),
                             method: "http".to_string(),
@@ -122,14 +132,13 @@ impl<T, E> Handler<T, E> {
             app_name: self.inngest.app_id.clone(),
             framework: framework.to_string(),
             functions,
-            // TODO: fix the URL
-            url: "http://127.0.0.1:3000/api/inngest".to_string(),
+            url: format!("{}{}", self.app_serve_origin(headers), self.app_serve_path()),
             ..Default::default()
         };
 
         reqwest::Client::new()
-            // TODO: fix the URL
-            .post("http://127.0.0.1:8288/fn/register")
+            .post(format!("{}/fn/register", self.inngest.inngest_api_origin(kind)))
+            // .header("x-inngest-kind", "dev")
             .json(&req)
             .send()
             .await
@@ -263,4 +272,10 @@ struct RunRequestCtx {
 struct RunRequestCtxStack {
     current: u32,
     stack: Vec<String>,
+}
+
+#[derive(Clone)]
+pub(crate) enum Kind {
+    Dev,
+    Cloud
 }

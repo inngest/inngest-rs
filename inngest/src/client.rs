@@ -1,9 +1,7 @@
 use url::Url;
 
 use crate::{
-    config::Config,
-    event::{Event, InngestEvent},
-    result::DevError,
+    config::Config, event::{Event, InngestEvent}, handler::Kind, result::DevError
 };
 
 const API_ORIGIN_DEV: &str = "http://127.0.0.1:8288";
@@ -104,7 +102,7 @@ impl Inngest {
             .map_err(|err| DevError::Basic(format!("{}", err)))
     }
 
-    pub(crate) fn inngest_api_origin(&self) -> String {
+    pub(crate) fn inngest_api_origin(&self, kind: Kind) -> String {
         if let Some(dev) = self.dev.clone() {
             return dev;
         }
@@ -113,7 +111,10 @@ impl Inngest {
             return endpoint;
         }
 
-        API_ORIGIN.to_string()
+        match kind {
+            Kind::Dev => API_ORIGIN_DEV.to_string(),
+            Kind::Cloud => API_ORIGIN.to_string()
+        }
     }
 
     fn inngest_evt_api_origin(&self) -> String {
