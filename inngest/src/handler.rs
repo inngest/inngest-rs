@@ -10,10 +10,10 @@ use crate::{
     config::Config,
     event::Event,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
+    header::Headers,
     result::{Error, FlowControlVariant, SdkResponse},
     sdk::Request,
     step_tool::Step as StepTool,
-    header
 };
 
 pub struct Handler<T: 'static, E> {
@@ -65,7 +65,7 @@ impl<T, E> Handler<T, E> {
         self.funcs.insert(func.slug(), func);
     }
 
-    fn app_serve_origin(&self, _headers: &HashMap<String, String>) -> String {
+    fn app_serve_origin(&self, _headers: &Headers) -> String {
         if let Some(origin) = self.serve_origin.clone() {
             return origin;
         }
@@ -83,18 +83,8 @@ impl<T, E> Handler<T, E> {
         "/api/inngest".to_string()
     }
 
-    pub async fn sync(
-        &self,
-        headers: &HashMap<String, String>,
-        framework: &str,
-    ) -> Result<(), String> {
-        let kind = match headers.get(header::INNGEST_SERVER_KIND) {
-            Some(val) => match val.as_str() {
-                "cloud" => Kind::Cloud,
-                _ => Kind::Dev
-            },
-            None => Kind::Dev
-        };
+    pub async fn sync(&self, headers: &Headers, framework: &str) -> Result<(), String> {
+        let kind = headers.server_kind();
 
         let functions: Vec<Function> = self
             .funcs
@@ -132,12 +122,19 @@ impl<T, E> Handler<T, E> {
             app_name: self.inngest.app_id.clone(),
             framework: framework.to_string(),
             functions,
-            url: format!("{}{}", self.app_serve_origin(headers), self.app_serve_path()),
+            url: format!(
+                "{}{}",
+                self.app_serve_origin(headers),
+                self.app_serve_path()
+            ),
             ..Default::default()
         };
 
         reqwest::Client::new()
-            .post(format!("{}/fn/register", self.inngest.inngest_api_origin(kind)))
+            .post(format!(
+                "{}/fn/register",
+                self.inngest.inngest_api_origin(kind)
+            ))
             .json(&req)
             .send()
             .await
@@ -145,11 +142,22 @@ impl<T, E> Handler<T, E> {
             .map_err(|_err| "error registering".to_string())
     }
 
-    pub async fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, Error>
+    pub async fn run(
+        &self,
+        headers: &Headers,
+        query: RunQueryParams,
+        body: &Value,
+    ) -> Result<SdkResponse, Error>
     where
         T: for<'de> Deserialize<'de> + Debug,
         E: Into<Error>,
     {
+        let sig = headers.signature();
+        let kind = headers.server_kind();
+        if kind == Kind::Cloud && sig.is_none() {
+            return Err(basic_error!("no signature provided for SDK in Cloud mode"));
+        }
+
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
@@ -273,8 +281,8 @@ struct RunRequestCtxStack {
     stack: Vec<String>,
 }
 
-#[derive(Clone)]
-pub(crate) enum Kind {
+#[derive(Clone, PartialEq, Eq)]
+pub enum Kind {
     Dev,
-    Cloud
+    Cloud,
 }
