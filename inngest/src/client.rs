@@ -8,6 +8,7 @@ use crate::{
 
 const EVENT_API_ORIGIN_DEV: &str = "http://127.0.0.1:8288";
 const EVENT_API_ORIGIN: &str = "https://inn.gs";
+const API_ORIGIN: &str = "https://api.inngest.com";
 
 #[derive(Clone)]
 pub struct Inngest {
@@ -78,8 +79,8 @@ impl Inngest {
         self.http
             .post(format!(
                 "{}/e/{}",
-                self.evt_api_origin(),
-                self.evt_api_key()
+                self.inngest_evt_api_origin(),
+                self.inngest_evt_api_key()
             ))
             .json(&evt)
             .send()
@@ -93,8 +94,8 @@ impl Inngest {
         self.http
             .post(format!(
                 "{}/e/{}",
-                self.evt_api_origin(),
-                self.evt_api_key()
+                self.inngest_evt_api_origin(),
+                self.inngest_evt_api_key()
             ))
             .json(&evts)
             .send()
@@ -103,7 +104,19 @@ impl Inngest {
             .map_err(|err| DevError::Basic(format!("{}", err)))
     }
 
-    fn evt_api_origin(&self) -> String {
+    pub(crate) fn inngest_api_origin(&self) -> String {
+        if let Some(dev) = self.dev.clone() {
+            return dev;
+        }
+
+        if let Some(endpoint) = self.api_origin.clone() {
+            return endpoint;
+        }
+
+        API_ORIGIN.to_string()
+    }
+
+    fn inngest_evt_api_origin(&self) -> String {
         if let Some(dev) = self.dev.clone() {
             return dev;
         }
@@ -115,7 +128,7 @@ impl Inngest {
         EVENT_API_ORIGIN.to_string()
     }
 
-    fn evt_api_key(&self) -> String {
+    fn inngest_evt_api_key(&self) -> String {
         if let Some(_) = self.dev.clone() {
             return "test".to_string();
         }
