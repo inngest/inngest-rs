@@ -6,7 +6,7 @@ use crate::{
     result::DevError,
 };
 
-const EVENT_API_ORIGIN_DEV: &str = "http://127.0.0.1:8288";
+const API_ORIGIN_DEV: &str = "http://127.0.0.1:8288";
 const EVENT_API_ORIGIN: &str = "https://inn.gs";
 const API_ORIGIN: &str = "https://api.inngest.com";
 
@@ -31,7 +31,7 @@ impl Inngest {
         // if the value is a URL, use it. otherwise set a default URL
         let dev = Config::dev().map(|v| match Url::parse(&v) {
             Ok(val) => val.to_string(),
-            Err(_) => EVENT_API_ORIGIN_DEV.to_string()
+            Err(_) => API_ORIGIN_DEV.to_string()
         });
 
         Inngest {
@@ -68,7 +68,7 @@ impl Inngest {
     pub fn dev(mut self, dev: &str) -> Self {
         let url = match Url::parse(dev) {
             Ok(val) =>  Some(val.to_string()),
-            Err(_) => Some(EVENT_API_ORIGIN_DEV.to_string())
+            Err(_) => Some(API_ORIGIN_DEV.to_string())
         };
         self.dev = url;
         self
