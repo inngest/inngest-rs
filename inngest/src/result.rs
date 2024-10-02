@@ -1,12 +1,14 @@
 use std::fmt::{Debug, Display};
 
 use axum::{
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     Json,
 };
 use serde::Serialize;
 use serde_json::{json, Value};
+
+use crate::header;
 
 #[derive(Serialize)]
 pub struct SdkResponse {
@@ -22,8 +24,9 @@ impl IntoResponse for SdkResponse {
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        headers.insert("x-inngest-framework", HeaderValue::from_static("axum"));
-        headers.insert("x-inngest-sdk", HeaderValue::from_str(&sdk).unwrap());
+        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static("axum"));
+        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&sdk).unwrap());
+        headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
 
         match self.status {
             200 => (StatusCode::OK, headers, Json(self.body)).into_response(),
@@ -129,8 +132,8 @@ impl Drop for FlowControlError {
                 // TODO: also add error! level tracing here
                 println!("Flow control error was not acknowledged");
             } else {
-                panic!("Flow control error was not acknowledged. 
-                This is a developer error. 
+                panic!("Flow control error was not acknowledged.
+                This is a developer error.
                 You should ensure that you return the flow control error within Inngest funcitons to the caller as soon as they're received.");
             }
         }

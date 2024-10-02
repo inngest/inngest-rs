@@ -138,7 +138,6 @@ impl<T, E> Handler<T, E> {
 
         reqwest::Client::new()
             .post(format!("{}/fn/register", self.inngest.inngest_api_origin(kind)))
-            // .header("x-inngest-kind", "dev")
             .json(&req)
             .send()
             .await
