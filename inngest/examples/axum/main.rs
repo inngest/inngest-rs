@@ -1,16 +1,16 @@
 use axum::{
     routing::{get, put},
-    Json, Router,
+    Router,
 };
 use inngest::{
+    client::Inngest,
     event::Event,
     function::{create_function, FunctionOps, Input, ServableFn, Trigger},
     handler::Handler,
     into_dev_result,
-    result::{DevError, Error, InngestResult},
+    result::{DevError, Error},
     serve,
     step_tool::{InvokeFunctionOpts, Step as StepTool, WaitForEventOpts},
-    Inngest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};

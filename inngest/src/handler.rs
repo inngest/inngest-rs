@@ -6,13 +6,13 @@ use serde_json::{json, Value};
 
 use crate::{
     basic_error,
+    client::Inngest,
     config::Config,
     event::Event,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
-    result::{DevError, Error, FlowControlError, FlowControlVariant, SdkResponse},
+    result::{Error, FlowControlVariant, SdkResponse},
     sdk::Request,
     step_tool::Step as StepTool,
-    Inngest,
 };
 
 pub struct Handler<T: 'static, E> {

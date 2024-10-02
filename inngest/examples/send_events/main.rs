@@ -1,4 +1,4 @@
-use inngest::{event::Event, Inngest};
+use inngest::{event::Event, client::Inngest};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

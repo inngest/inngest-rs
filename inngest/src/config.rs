@@ -33,8 +33,8 @@ impl Config {
         Self::read_env_str(INNGEST_ENV)
     }
 
-    pub fn is_dev() -> Option<bool> {
-        Self::read_env_bool(INNGEST_DEV)
+    pub fn dev() -> Option<String> {
+        Self::read_env_str(INNGEST_DEV)
     }
 
     pub fn signing_key() -> Option<String> {
