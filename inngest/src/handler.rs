@@ -88,7 +88,7 @@ impl<T, E> Handler<T, E> {
         headers: &HashMap<String, String>,
         framework: &str,
     ) -> Result<(), String> {
-        let kind = match headers.get(header::SERVER_KIND) {
+        let kind = match headers.get(header::INNGEST_SERVER_KIND) {
             Some(val) => match val.as_str() {
                 "cloud" => Kind::Cloud,
                 _ => Kind::Dev
