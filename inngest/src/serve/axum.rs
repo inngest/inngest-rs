@@ -1,5 +1,8 @@
 use crate::{
-    basic_error, handler::{Handler, RunQueryParams}, header::Headers, result::{Error, SdkResponse}
+    basic_error,
+    handler::{Handler, RunQueryParams},
+    header::Headers,
+    result::{Error, SdkResponse},
 };
 
 use axum::{
@@ -37,7 +40,6 @@ where
     let headers = Headers::from(hmap);
     match serde_json::from_str(&raw) {
         Ok(body) => handler.run(&headers, query, raw.as_str(), &body).await,
-        Err(_err) => Err(basic_error!("failed to parse body as JSON"))
+        Err(_err) => Err(basic_error!("failed to parse body as JSON")),
     }
-
 }

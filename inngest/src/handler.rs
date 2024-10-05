@@ -172,7 +172,6 @@ impl<T, E> Handler<T, E> {
             _ = signature.verify(false)?;
         }
 
-
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
