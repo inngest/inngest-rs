@@ -1,25 +1,32 @@
+use std::{
+    collections::HashMap,
+    time::{self, Duration, SystemTime},
+};
+
+use hmac::{Hmac, Mac};
 use regex::Regex;
-use serde_json::Value;
 use sha1::Digest;
 use sha2::Sha256;
 
 use crate::{basic_error, result::Error};
 
+type HmacSha256 = Hmac<Sha256>;
+
 pub struct Signature {
     sig: String,
     key: String,
-    body: Value,
+    body: String,
     re: Regex,
 }
 
 impl Signature {
-    pub fn new(sig: &str, key: &str, body: &Value) -> Self {
+    pub fn new(sig: &str, key: &str, body: &str) -> Self {
         let re = Regex::new(r"^signkey-.+-").unwrap();
 
         Signature {
             sig: sig.to_string(),
             key: key.to_string(),
-            body: body.clone(),
+            body: body.to_string(),
             re,
         }
     }
@@ -28,7 +35,7 @@ impl Signature {
         match self.re.find(&self.key) {
             Some(mat) => {
                 let prefix = mat.as_str();
-                let key = self.normalize_key();
+                let key = self.normalize_key(&self.key);
 
                 match base16::decode(key.as_bytes()) {
                     Ok(de) => {
@@ -51,18 +58,91 @@ impl Signature {
 
     // TODO: implement signature validation
     pub fn verify(&self, ignore_ts: bool) -> Result<(), Error> {
-        Ok(())
+        let smap = self.sig_map();
+
+        match smap.get("t") {
+            Some(tsstr) => match tsstr.parse::<i64>() {
+                Ok(ts) => {
+                    let now = SystemTime::now();
+                    let from = self.unix_ts_to_systime(ts);
+
+                    match now.duration_since(from) {
+                        Ok(dur) => {
+                            if ignore_ts || dur <= Duration::from_secs(60 * 5) {
+                                match self.sign(ts, &self.key, &self.body) {
+                                    Ok(sig) => {
+                                        if sig == self.sig {
+                                            Ok(())
+                                        } else {
+                                            // TODO: handle errors better
+                                            Err(basic_error!("signature doesn't match"))
+                                        }
+                                    }
+                                    // TODO: handle errors better
+                                    Err(_err) => Err(basic_error!("error signing body")),
+                                }
+                            } else {
+                                // TODO: handle errors better
+                                Err(basic_error!("invalid sig"))
+                            }
+                        }
+                        // TODO: handle errors better
+                        Err(_err) => Err(basic_error!("error parsing time elasped for sig")),
+                    }
+                }
+                // TODO: handle errors better
+                Err(_err) => Err(basic_error!("error parsing ts as integer")),
+            },
+            // TODO: handle errors better
+            None => Err(basic_error!("no ts field for signature")),
+        }
     }
 
-    fn normalize_key(&self) -> String {
-        self.re.replace(&self.key, "").to_string()
+    fn normalize_key(&self, key: &str) -> String {
+        self.re.replace(key, "").to_string()
+    }
+
+    fn sig_map(&self) -> HashMap<String, String> {
+        let mut map = HashMap::new();
+
+        for attrs in self.sig.split("&") {
+            let mut parts = attrs.split("=");
+
+            if let (Some(key), Some(val)) = (parts.next(), parts.next()) {
+                map.insert(key.to_string(), val.to_string());
+            }
+        }
+
+        map
+    }
+
+    fn unix_ts_to_systime(&self, ts: i64) -> SystemTime {
+        if ts >= 0 {
+            time::UNIX_EPOCH + Duration::from_millis(ts as u64)
+        } else {
+            // handle negative timestamp
+            let nts = Duration::from_millis(-ts as u64);
+            time::UNIX_EPOCH - nts
+        }
+    }
+
+    fn sign(&self, unix_ts: i64, signing_key: &str, body: &str) -> Result<String, Error> {
+        let key = self.normalize_key(signing_key);
+        let mut mac =
+            HmacSha256::new_from_slice(&key.as_bytes()).expect("HMAC can take key of any size");
+        mac.update(format!("{}{}", body, unix_ts).as_bytes());
+
+        let sum = mac.finalize();
+        let sig = base16::encode_lower(&sum.into_bytes());
+
+        Ok(format!("t={}&s={}", unix_ts, sig))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     const SIGNING_KEY: &str =
         "signkey-test-8ee2262a15e8d3c42d6a840db7af3de2aab08ef632b32a37a687f24b34dba3ff";
@@ -91,10 +171,10 @@ mod tests {
         })
     }
 
-    fn body() -> Value {
+    fn body() -> String {
         let evt = event();
 
-        json!({
+        let body = json!({
             "ctx": {
                 "fn_id": "local-testing-local-cron",
                 "run_id": "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
@@ -104,7 +184,9 @@ mod tests {
             "events": [&evt],
             "steps": {},
             "use_api": false
-        })
+        });
+
+        serde_json::to_string(&body).expect("JSON should serialize to string")
     }
 
     #[test]
@@ -115,7 +197,6 @@ mod tests {
         assert!(res.is_ok());
     }
 
-    #[ignore]
     #[test]
     fn test_verify_if_signature_is_expired() {
         let body = body();
@@ -124,7 +205,6 @@ mod tests {
         assert!(res.is_err());
     }
 
-    #[ignore]
     #[test]
     fn test_verify_if_signature_is_invalid() {
         let body = body();
@@ -134,7 +214,6 @@ mod tests {
         assert!(res.is_err());
     }
 
-    #[ignore]
     #[test]
     fn test_verify_for_random_input() {
         let body = body();

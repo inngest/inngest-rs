@@ -1,7 +1,5 @@
 use crate::{
-    handler::{Handler, RunQueryParams},
-    header::Headers,
-    result::{Error, SdkResponse},
+    basic_error, handler::{Handler, RunQueryParams}, header::Headers, result::{Error, SdkResponse}
 };
 
 use axum::{
@@ -29,12 +27,17 @@ pub async fn invoke<T, E>(
     hmap: HeaderMap,
     Query(query): Query<RunQueryParams>,
     State(handler): State<Arc<Handler<T, E>>>,
-    Json(body): Json<Value>,
+    raw: String,
+    // Json(body): Json<Value>,
 ) -> Result<SdkResponse, Error>
 where
     T: for<'de> Deserialize<'de> + Debug,
     E: Into<Error>,
 {
     let headers = Headers::from(hmap);
-    handler.run(&headers, query, &body).await
+    match serde_json::from_str(&raw) {
+        Ok(body) => handler.run(&headers, query, raw.as_str(), &body).await,
+        Err(_err) => Err(basic_error!("failed to parse body as JSON"))
+    }
+
 }

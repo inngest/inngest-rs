@@ -147,6 +147,7 @@ impl<T, E> Handler<T, E> {
         &self,
         headers: &Headers,
         query: RunQueryParams,
+        raw_body: &str,
         body: &Value,
     ) -> Result<SdkResponse, Error>
     where
@@ -159,6 +160,19 @@ impl<T, E> Handler<T, E> {
             return Err(basic_error!("no signature provided for SDK in Cloud mode"));
         }
 
+        // Verify the signature if provided
+        if let Some(sig) = sig.clone() {
+            let Some(key) = self.signing_key.clone() else {
+                return Err(basic_error!(
+                    "no signing key available for verifying request signature"
+                ));
+            };
+
+            let signature = Signature::new(&sig, &key, raw_body);
+            _ = signature.verify(false)?;
+        }
+
+
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
@@ -170,20 +184,6 @@ impl<T, E> Handler<T, E> {
 
         // TODO: retrieve data from API on flag
         if data.use_api {}
-
-        // Verify the signature if provided
-        if let Some(sig) = sig.clone() {
-            let Some(key) = self.signing_key.clone() else {
-                return Err(basic_error!(
-                    "no signing key available for verifying request signature"
-                ));
-            };
-
-            let signature = Signature::new(&sig, &key, &body);
-            if let Err(err) = signature.verify(false) {
-                return Err(err);
-            }
-        }
 
         // find the specified function
         let Some(func) = self.funcs.get(&query.fn_id) else {
