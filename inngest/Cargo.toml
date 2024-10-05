@@ -21,6 +21,7 @@ slug = "0.1.4"
 typetag = "0.2.13"
 inngest_macros = { path = "../macros" }
 futures = "0.3.30"
+regex = "1.11.0"
 
 # used for step encoding in SDK
 sha1 = "0.10.6"
