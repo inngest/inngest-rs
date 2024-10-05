@@ -1,29 +1,61 @@
+use regex::Regex;
 use serde_json::Value;
+use sha1::Digest;
+use sha2::Sha256;
 
-use crate::result::Error;
+use crate::{basic_error, result::Error};
 
 pub struct Signature {
     sig: String,
     key: String,
     body: Value,
+    re: Regex,
 }
 
 impl Signature {
     pub fn new(sig: &str, key: &str, body: &Value) -> Self {
+        let re = Regex::new(r"^signkey-.+-").unwrap();
+
         Signature {
             sig: sig.to_string(),
             key: key.to_string(),
             body: body.clone(),
+            re,
         }
     }
 
-    fn hash(key: &str) -> String {
-        "".to_string()
+    fn hash(&self) -> Result<String, Error> {
+        match self.re.find(&self.key) {
+            Some(mat) => {
+                let prefix = mat.as_str();
+                let key = self.normalize_key();
+
+                match base16::decode(key.as_bytes()) {
+                    Ok(de) => {
+                        let mut hasher = Sha256::new();
+                        hasher.update(de);
+
+                        let sum = hasher.finalize();
+                        let enc = base16::encode_lower(&sum);
+
+                        Ok(format!("{}{}", prefix, enc))
+                    }
+                    // TODO: handle errors better
+                    Err(_err) => Err(basic_error!("decode error")),
+                }
+            }
+            // TODO: handle errors better
+            None => Err(basic_error!("hash failure")),
+        }
     }
 
     // TODO: implement signature validation
     pub fn verify(&self, ignore_ts: bool) -> Result<(), Error> {
         Ok(())
+    }
+
+    fn normalize_key(&self) -> String {
+        self.re.replace(&self.key, "").to_string()
     }
 }
 
@@ -41,8 +73,11 @@ mod tests {
 
     #[test]
     fn test_hashed_signing_key() {
-        let hashed = Signature::hash(SIGNING_KEY);
-        assert_eq!(hashed, HASHED_SIGNING_KEY);
+        let body = body();
+        let sig = Signature::new(SIGNATURE, SIGNING_KEY, &body);
+        let hashed = sig.hash();
+        assert!(hashed.is_ok());
+        assert_eq!(HASHED_SIGNING_KEY, hashed.unwrap());
     }
 
     fn event() -> Value {
