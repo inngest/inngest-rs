@@ -180,7 +180,7 @@ impl<T, E> Handler<T, E> {
             };
 
             let signature = Signature::new(&sig, &key, &body);
-            if let Err(err) = signature.verify() {
+            if let Err(err) = signature.verify(false) {
                 return Err(err);
             }
         }
