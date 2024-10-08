@@ -78,6 +78,10 @@ impl Signature {
 
                     match now.duration_since(from) {
                         Ok(dur) => {
+                            println!(
+                                "DEBUG:\n  Timestamp: {}\n  Now: {:#?}\n  From: {:#?}\n  Duration: {:#?}\n  SMap: {:#?}\n  Ignore: {}\n  Within Range: {}",
+                                ts, now, from, dur, smap, ignore_ts, dur <= Duration::from_secs(60 * 5)
+                            );
                             if ignore_ts || dur <= Duration::from_secs(60 * 5) {
                                 match self.sign(ts, &self.key, &self.body) {
                                     Ok(sig) => {
