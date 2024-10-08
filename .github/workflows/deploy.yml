@@ -56,7 +56,7 @@ jobs:
         working-directory: deploy
         run: |
           # image name
-          sed -i "s/IMAGE_NAME/${{ steps.login-ecr.outputs.registry }}/g" kustomization.yaml
+          sed -i "s/IMAGE_NAME/${{ steps.login-ecr.outputs.registry }}\/rust-sdk/g" kustomization.yaml
 
           # image tag
           sed -i "s/IMAGE_TAG/${{ env.DOCKER_METADATA_OUTPUT_VERSION }}/g" kustomization.yaml
