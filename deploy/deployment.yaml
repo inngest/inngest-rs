@@ -7,8 +7,6 @@ spec:
   revisionHistoryLimit: 5
   template:
     spec:
-      # allow enough time for graceful termination
-      terminationGracePeriodSeconds: 600
       topologySpreadConstraints:
         - topologyKey: "topology.kubernetes.io/zone"
           maxSkew: 1
