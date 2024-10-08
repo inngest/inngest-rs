@@ -143,13 +143,12 @@ impl<T, E> Handler<T, E> {
             match sig.hash() {
                 Ok(hashed) => {
                     req = req.header("authorization", format!("Bearer {}", hashed));
-                },
+                }
                 Err(_err) => {
                     return Err("error hashing signing key".to_string());
                 }
             }
         }
-
 
         req.send()
             .await
