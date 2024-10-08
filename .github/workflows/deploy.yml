@@ -67,8 +67,8 @@ jobs:
           # event key
           sed -i "s/REPLACE_EVENT_KEY/${{ secrets.INNGEST_EVENT_KEY }}/g" kustomization.yaml
 
-          # TLS cert
-          sed -i 's/REPLACE_TLS_CERT_ARN/${{ secrets.TLS_CERT_ARN }}/g' service.yaml
+          # TLS cert - use % as separator instead
+          sed -i 's%REPLACE_TLS_CERT_ARN%${{ secrets.TLS_CERT_ARN }}%g' service.yaml
 
       - name: Deploy
         uses: ianbelcher/eks-kubectl-action@master # ALERT: master...?
