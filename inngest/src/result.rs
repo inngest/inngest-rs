@@ -142,11 +142,28 @@ impl Drop for FlowControlError {
 
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!("NOT IMPLEMENTED")),
-        )
-            .into_response()
+        match self {
+            Error::Dev(err) => match err {
+                DevError::Basic(msg) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!(msg))),
+                DevError::RetryAt(_err) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!("retry after error")),
+                ),
+                DevError::NoRetry(_err) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!("no retry error")),
+                ),
+            },
+            Error::NoInvokeFunctionResponseError => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!("No invoke response")),
+            ),
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!("NOT IMPLEMENTED")),
+            ),
+        }
+        .into_response()
     }
 }
 

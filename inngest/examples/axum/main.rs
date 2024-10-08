@@ -140,7 +140,7 @@ fn hello_fn() -> ServableFn<TestData, Error> {
             let evt = &input.event;
             println!("Event: {}", evt.name);
 
-            step.sleep_until("sleep", 1727245659000)?;
+            step.sleep("wait-5s", Duration::from_secs(5))?;
 
             Ok(json!("test hello"))
         },
