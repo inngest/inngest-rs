@@ -73,4 +73,4 @@ jobs:
           cluster_name: ${{ secrets.EKS_CLUSTER_NAME }}
           kubernetes_version: v1.28.4
           eks_role_arn: ${{ secrets.EKS_ACCESS_ARN }}
-          args: apply -k ./opt/deploy/overlays/staging
+          args: apply -k ./deploy
