@@ -1,4 +1,4 @@
-FROM 1.79-bookworm AS build
+FROM rust:1.79-bookworm AS build
 
 RUN apt-get update && apt-get install -y adduser ca-certificates tzdata curl dnsutils && update-ca-certificates
 
