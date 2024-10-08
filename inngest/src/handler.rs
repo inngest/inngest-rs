@@ -188,6 +188,7 @@ impl<T, E> Handler<T, E> {
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
+                println!("BODY: {:#?}", &body);
                 // TODO: need to surface this error better
                 let msg = basic_error!("error parsing run request: {}", err);
                 return Err(msg);
