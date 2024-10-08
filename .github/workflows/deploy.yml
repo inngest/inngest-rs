@@ -35,7 +35,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.login-ecr.outputs }}/rust-sdk
+          images: ${{ steps.login-ecr.outputs.registry }}/rust-sdk
           tags: |
             type=sha,prefix=
 
