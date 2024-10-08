@@ -10,7 +10,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build_and_deploy:
+    name: Build and Deploy
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -51,34 +52,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy:
-    needs: [build]
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_GH_ACTION_ACCESS }}
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Login to AWS ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.login-ecr.outputs.registry }}/rust-sdk
-          tags: |
-            type=sha,prefix=
-
       - name: Replace placeholders in kustomize
+        working-directory: deploy
         run: |
           # image name
           sed -i "s/IMAGE_NAME/${{ steps.login-ecr.outputs.registry }}/g" kustomization.yaml
