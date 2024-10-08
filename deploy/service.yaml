@@ -10,6 +10,10 @@ metadata:
     service.beta.kubernetes.io/aws-load-balancer-target-group-attributes: preserve_client_ip.enabled=true
     service.beta.kubernetes.io/aws-load-balancer-ssl-negotiation-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
     service.beta.kubernetes.io/aws-load-balancer-attributes: load_balancing.cross_zone.enabled=true
+    service.beta.kubernetes.io/aws-load-balancer-additional-resource-tags: env=staging,app=rust-sdk
+    service.beta.kubernetes.io/aws-load-balancer-ssl-cert: arn:aws:acm:us-east-2:909933634258:certificate/56142e36-5123-47fc-90de-a2865439c6aa
+    # external DNS integration test
+    external-dns.alpha.kubernetes.io/hostname: rust-sdk.inngest.net
 spec:
   type: LoadBalancer
   ports:

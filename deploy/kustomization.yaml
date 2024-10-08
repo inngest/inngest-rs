@@ -11,6 +11,9 @@ configMapGenerator:
   - name: common
     literals:
       - INNGEST_SERVE_ORIGIN=https://rust-sdk.inngest.net
+      - INNGEST_EVENT_API_ORIGIN=https://stage.inn.gs
+      - INNGEST_API_ORIGIN=https://api.inngest.net
+
       - INNGEST_SIGNING_KEY=REPLACE_SIGNING_KEY
       - INNGEST_EVENT_KEY=REPLACE_EVENT_KEY
 
@@ -19,3 +22,8 @@ resources:
   - serviceaccount.yaml
   - service.yaml
   - deployment.yaml
+
+images:
+  - name: rust-sdk
+    newName: "IMAGE_NAME"
+    newTag: "IMAGE_TAG"
