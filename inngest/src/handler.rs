@@ -131,13 +131,27 @@ impl<T, E> Handler<T, E> {
             ..Default::default()
         };
 
-        reqwest::Client::new()
+        let mut req = reqwest::Client::new()
             .post(format!(
                 "{}/fn/register",
                 self.inngest.inngest_api_origin(kind)
             ))
-            .json(&req)
-            .send()
+            .json(&req);
+
+        if let Some(key) = &self.signing_key {
+            let sig = Signature::new(&key);
+            match sig.hash() {
+                Ok(hashed) => {
+                    req = req.header("authorization", format!("Bearer {}", hashed));
+                },
+                Err(_err) => {
+                    return Err("error hashing signing key".to_string());
+                }
+            }
+        }
+
+
+        req.send()
             .await
             .map(|_| ())
             .map_err(|_err| "error registering".to_string())
@@ -168,7 +182,7 @@ impl<T, E> Handler<T, E> {
                 ));
             };
 
-            let signature = Signature::new(&sig, &key, raw_body);
+            let signature = Signature::new(&key).sig(&sig).body(raw_body);
             _ = signature.verify(false)?;
         }
 

@@ -20,18 +20,28 @@ pub struct Signature {
 }
 
 impl Signature {
-    pub fn new(sig: &str, key: &str, body: &str) -> Self {
+    pub fn new(key: &str) -> Self {
         let re = Regex::new(r"^signkey-.+-").unwrap();
 
         Signature {
-            sig: sig.to_string(),
+            sig: String::new(),
             key: key.to_string(),
-            body: body.to_string(),
+            body: String::new(),
             re,
         }
     }
 
-    fn hash(&self) -> Result<String, Error> {
+    pub fn sig(mut self, sig: &str) -> Self {
+        self.sig = sig.to_string();
+        self
+    }
+
+    pub fn body(mut self, body: &str) -> Self {
+        self.body = body.to_string();
+        self
+    }
+
+    pub fn hash(&self) -> Result<String, Error> {
         match self.re.find(&self.key) {
             Some(mat) => {
                 let prefix = mat.as_str();
@@ -153,8 +163,7 @@ mod tests {
 
     #[test]
     fn test_hashed_signing_key() {
-        let body = body();
-        let sig = Signature::new(SIGNATURE, SIGNING_KEY, &body);
+        let sig = Signature::new(SIGNING_KEY);
         let hashed = sig.hash();
         assert!(hashed.is_ok());
         assert_eq!(HASHED_SIGNING_KEY, hashed.unwrap());
@@ -192,7 +201,7 @@ mod tests {
     #[test]
     fn test_verify_if_signature_is_valid() {
         let body = body();
-        let sig = Signature::new(SIGNATURE, SIGNING_KEY, &body);
+        let sig = Signature::new(SIGNING_KEY).sig(SIGNATURE).body(&body);
         let res = sig.verify(true);
         assert!(res.is_ok());
     }
@@ -200,7 +209,7 @@ mod tests {
     #[test]
     fn test_verify_if_signature_is_expired() {
         let body = body();
-        let sig = Signature::new(SIGNATURE, SIGNING_KEY, &body);
+        let sig = Signature::new(SIGNING_KEY).sig(SIGNATURE).body(&body);
         let res = sig.verify(false);
         assert!(res.is_err());
     }
@@ -209,7 +218,7 @@ mod tests {
     fn test_verify_if_signature_is_invalid() {
         let body = body();
         let invalid_sig = format!("{}hello", SIGNATURE);
-        let sig = Signature::new(&invalid_sig, SIGNING_KEY, &body);
+        let sig = Signature::new(SIGNING_KEY).sig(&invalid_sig).body(&body);
         let res = sig.verify(true);
         assert!(res.is_err());
     }
@@ -217,7 +226,7 @@ mod tests {
     #[test]
     fn test_verify_for_random_input() {
         let body = body();
-        let sig = Signature::new("10", SIGNING_KEY, &body);
+        let sig = Signature::new(SIGNING_KEY).sig("10").body(&body);
         let res = sig.verify(true);
         assert!(res.is_err());
     }
