@@ -1,0 +1,79 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_and_deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GH_ACTION_ACCESS }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to AWS ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.login-ecr.outputs.registry }}/rust-sdk
+          tags: |
+            type=sha,prefix=
+
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          provenance: false
+          file: inngest/examples/axum/Dockerfile
+          tags: ${{ steps.meta.outputs.tags }}
+          platform: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Replace placeholders in kustomize
+        working-directory: deploy
+        run: |
+          # image name
+          sed -i "s/IMAGE_NAME/${{ steps.login-ecr.outputs.registry }}\/rust-sdk/g" kustomization.yaml
+
+          # image tag
+          sed -i "s/IMAGE_TAG/${{ env.DOCKER_METADATA_OUTPUT_VERSION }}/g" kustomization.yaml
+
+          # siging key
+          sed -i "s/REPLACE_SIGNING_KEY/${{ secrets.INNGEST_SIGNING_KEY }}/g" kustomization.yaml
+
+          # event key
+          sed -i "s/REPLACE_EVENT_KEY/${{ secrets.INNGEST_EVENT_KEY }}/g" kustomization.yaml
+
+          # TLS cert - use % as separator instead
+          sed -i 's%REPLACE_TLS_CERT_ARN%${{ secrets.TLS_CERT_ARN }}%g' service.yaml
+
+      - name: Deploy
+        uses: ianbelcher/eks-kubectl-action@master # ALERT: master...?
+        with:
+          cluster_name: ${{ secrets.EKS_CLUSTER_NAME }}
+          kubernetes_version: v1.28.4
+          eks_role_arn: ${{ secrets.EKS_ACCESS_ARN }}
+          args: apply -k ./deploy

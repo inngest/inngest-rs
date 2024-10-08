@@ -1,16 +1,16 @@
 use axum::{
     routing::{get, put},
-    Json, Router,
+    Router,
 };
 use inngest::{
+    client::Inngest,
     event::Event,
     function::{create_function, FunctionOps, Input, ServableFn, Trigger},
     handler::Handler,
     into_dev_result,
-    result::{DevError, Error, InngestResult},
+    result::{DevError, Error},
     serve,
     step_tool::{InvokeFunctionOpts, Step as StepTool, WaitForEventOpts},
-    Inngest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -29,15 +29,17 @@ async fn main() {
     let inngest_state = Arc::new(inngest_handler);
 
     let app = Router::new()
-        .route("/", get(|| async { "Hello, World!" }))
+        .route("/", get(|| async { "OK!\n" }))
         .route(
             "/api/inngest",
             put(serve::axum::register).post(serve::axum::invoke),
         )
         .with_state(inngest_state);
 
+    let addr = "[::]:3000".parse::<std::net::SocketAddr>().unwrap();
+
     // run it with hyper on localhost:3000
-    axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
+    axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
         .unwrap();
@@ -138,7 +140,7 @@ fn hello_fn() -> ServableFn<TestData, Error> {
             let evt = &input.event;
             println!("Event: {}", evt.name);
 
-            step.sleep_until("sleep", 1727245659000)?;
+            step.sleep("wait-5s", Duration::from_secs(5))?;
 
             Ok(json!("test hello"))
         },

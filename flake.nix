@@ -29,6 +29,7 @@
 
             # LSP
             rust-analyzer
+            nodePackages.yaml-language-server
           ];
 
           RUST_SRC_PATH =

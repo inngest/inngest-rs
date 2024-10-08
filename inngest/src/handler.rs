@@ -6,13 +6,15 @@ use serde_json::{json, Value};
 
 use crate::{
     basic_error,
+    client::Inngest,
     config::Config,
     event::Event,
     function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
-    result::{DevError, Error, FlowControlError, FlowControlVariant, SdkResponse},
+    header::Headers,
+    result::{Error, FlowControlVariant, SdkResponse},
     sdk::Request,
+    signature::Signature,
     step_tool::Step as StepTool,
-    Inngest,
 };
 
 pub struct Handler<T: 'static, E> {
@@ -45,15 +47,46 @@ impl<T, E> Handler<T, E> {
         }
     }
 
+    pub fn signing_key(mut self, key: &str) -> Self {
+        self.signing_key = Some(key.to_string());
+        self
+    }
+
+    pub fn serve_origin(mut self, origin: &str) -> Self {
+        self.serve_origin = Some(origin.to_string());
+        self
+    }
+
+    pub fn serve_path(mut self, path: &str) -> Self {
+        self.serve_path = Some(path.to_string());
+        self
+    }
+
     pub fn register_fn(&mut self, func: ServableFn<T, E>) {
         self.funcs.insert(func.slug(), func);
     }
 
-    pub async fn sync(
-        &self,
-        _headers: &HashMap<String, String>,
-        framework: &str,
-    ) -> Result<(), String> {
+    fn app_serve_origin(&self, _headers: &Headers) -> String {
+        if let Some(origin) = self.serve_origin.clone() {
+            return origin;
+        }
+        // if let Some(host) = headers.get("host") {
+        //     return host.to_string();
+        // }
+
+        "http://127.0.0.1:3000".to_string()
+    }
+
+    fn app_serve_path(&self) -> String {
+        if let Some(path) = self.serve_path.clone() {
+            return path;
+        }
+        "/api/inngest".to_string()
+    }
+
+    pub async fn sync(&self, headers: &Headers, framework: &str) -> Result<(), String> {
+        let kind = headers.server_kind();
+
         let functions: Vec<Function> = self
             .funcs
             .iter()
@@ -66,8 +99,9 @@ impl<T, E> Handler<T, E> {
                         name: "step".to_string(),
                         runtime: StepRuntime {
                             url: format!(
-                                // TODO: fix the URL
-                                "http://127.0.0.1:3000/api/inngest?fnId={}&step=step",
+                                "{}{}?fnId={}&step=step",
+                                self.app_serve_origin(headers),
+                                self.app_serve_path(),
                                 f.slug()
                             ),
                             method: "http".to_string(),
@@ -89,29 +123,72 @@ impl<T, E> Handler<T, E> {
             app_name: self.inngest.app_id.clone(),
             framework: framework.to_string(),
             functions,
-            // TODO: fix the URL
-            url: "http://127.0.0.1:3000/api/inngest".to_string(),
+            url: format!(
+                "{}{}",
+                self.app_serve_origin(headers),
+                self.app_serve_path()
+            ),
             ..Default::default()
         };
 
-        reqwest::Client::new()
-            // TODO: fix the URL
-            .post("http://127.0.0.1:8288/fn/register")
-            .json(&req)
-            .send()
+        let mut req = reqwest::Client::new()
+            .post(format!(
+                "{}/fn/register",
+                self.inngest.inngest_api_origin(kind)
+            ))
+            .json(&req);
+
+        if let Some(key) = &self.signing_key {
+            let sig = Signature::new(&key);
+            match sig.hash() {
+                Ok(hashed) => {
+                    req = req.header("authorization", format!("Bearer {}", hashed));
+                }
+                Err(_err) => {
+                    return Err("error hashing signing key".to_string());
+                }
+            }
+        }
+
+        req.send()
             .await
             .map(|_| ())
             .map_err(|_err| "error registering".to_string())
     }
 
-    pub async fn run(&self, query: RunQueryParams, body: &Value) -> Result<SdkResponse, Error>
+    pub async fn run(
+        &self,
+        headers: &Headers,
+        query: RunQueryParams,
+        raw_body: &str,
+        body: &Value,
+    ) -> Result<SdkResponse, Error>
     where
         T: for<'de> Deserialize<'de> + Debug,
         E: Into<Error>,
     {
+        let sig = headers.signature();
+        let kind = headers.server_kind();
+        if kind == Kind::Cloud && sig.is_none() {
+            return Err(basic_error!("no signature provided for SDK in Cloud mode"));
+        }
+
+        // Verify the signature if provided
+        if let Some(sig) = sig.clone() {
+            let Some(key) = self.signing_key.clone() else {
+                return Err(basic_error!(
+                    "no signing key available for verifying request signature"
+                ));
+            };
+
+            let signature = Signature::new(&key).sig(&sig).body(raw_body);
+            _ = signature.verify(false)?;
+        }
+
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
             Ok(res) => res,
             Err(err) => {
+                println!("BODY: {:#?}", &body);
                 // TODO: need to surface this error better
                 let msg = basic_error!("error parsing run request: {}", err);
                 return Err(msg);
@@ -230,4 +307,10 @@ struct RunRequestCtx {
 struct RunRequestCtxStack {
     current: u32,
     stack: Vec<String>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub enum Kind {
+    Dev,
+    Cloud,
 }

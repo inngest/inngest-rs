@@ -12,8 +12,6 @@ const INNGEST_SIGNING_KEY: &str = "INNGEST_SIGNING_KEY";
 const INNGEST_SERVE_ORIGIN: &str = "INNGEST_SERVE_ORIGIN";
 const INNGEST_SERVE_PATH: &str = "INNGEST_SERVE_PATH";
 
-// TODO: default values
-
 pub(crate) struct Config {}
 
 impl Config {
@@ -33,8 +31,8 @@ impl Config {
         Self::read_env_str(INNGEST_ENV)
     }
 
-    pub fn is_dev() -> Option<bool> {
-        Self::read_env_bool(INNGEST_DEV)
+    pub fn dev() -> Option<String> {
+        Self::read_env_str(INNGEST_DEV)
     }
 
     pub fn signing_key() -> Option<String> {
