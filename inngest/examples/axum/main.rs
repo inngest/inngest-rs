@@ -29,15 +29,17 @@ async fn main() {
     let inngest_state = Arc::new(inngest_handler);
 
     let app = Router::new()
-        .route("/", get(|| async { "OK!" }))
+        .route("/", get(|| async { "OK!\n" }))
         .route(
             "/api/inngest",
             put(serve::axum::register).post(serve::axum::invoke),
         )
         .with_state(inngest_state);
 
+    let addr = "[::]:3000".parse::<std::net::SocketAddr>().unwrap();
+
     // run it with hyper on localhost:3000
-    axum::Server::bind(&"[::]:3000".parse().unwrap())
+    axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
         .unwrap();
