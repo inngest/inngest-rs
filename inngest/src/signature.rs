@@ -1,14 +1,11 @@
-use std::{
-    collections::HashMap,
-    time::{self, Duration, SystemTime},
-};
+use std::{collections::HashMap, time::Duration};
 
 use hmac::{Hmac, Mac};
 use regex::Regex;
 use sha1::Digest;
 use sha2::Sha256;
 
-use crate::{basic_error, result::Error};
+use crate::{basic_error, result::Error, utils::time};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -73,35 +70,30 @@ impl Signature {
         match smap.get("t") {
             Some(tsstr) => match tsstr.parse::<i64>() {
                 Ok(ts) => {
-                    let now = SystemTime::now();
-                    let from = self.unix_ts_to_systime(ts);
+                    let now = time::now();
+                    let valid =
+                        Duration::from_millis((now - ts) as u64) <= Duration::from_secs(60 * 5);
 
-                    match now.duration_since(from) {
-                        Ok(dur) => {
-                            println!(
-                                "DEBUG:\n  Timestamp: {}\n  Now: {:#?}\n  From: {:#?}\n  Duration: {:#?}\n  SMap: {:#?}\n  Ignore: {}\n  Within Range: {}",
-                                ts, now, from, dur, smap, ignore_ts, dur <= Duration::from_secs(60 * 5)
-                            );
-                            if ignore_ts || dur <= Duration::from_secs(60 * 5) {
-                                match self.sign(ts, &self.key, &self.body) {
-                                    Ok(sig) => {
-                                        if sig == self.sig {
-                                            Ok(())
-                                        } else {
-                                            // TODO: handle errors better
-                                            Err(basic_error!("signature doesn't match"))
-                                        }
-                                    }
+                    println!(
+                        "DEBUG:\n  Timestamp: {}\n  Now: {}\n  SMap: {:#?}\n  Ignore: {}\n  Within Range: {}\n",
+                        ts, now, smap, ignore_ts, valid
+                    );
+                    if ignore_ts || valid {
+                        match self.sign(ts, &self.key, &self.body) {
+                            Ok(sig) => {
+                                if sig == self.sig {
+                                    Ok(())
+                                } else {
                                     // TODO: handle errors better
-                                    Err(_err) => Err(basic_error!("error signing body")),
+                                    Err(basic_error!("signature doesn't match"))
                                 }
-                            } else {
-                                // TODO: handle errors better
-                                Err(basic_error!("invalid sig"))
                             }
+                            // TODO: handle errors better
+                            Err(_err) => Err(basic_error!("error signing body")),
                         }
+                    } else {
                         // TODO: handle errors better
-                        Err(_err) => Err(basic_error!("error parsing time elasped for sig")),
+                        Err(basic_error!("invalid sig"))
                     }
                 }
                 // TODO: handle errors better
@@ -130,15 +122,15 @@ impl Signature {
         map
     }
 
-    fn unix_ts_to_systime(&self, ts: i64) -> SystemTime {
-        if ts >= 0 {
-            time::UNIX_EPOCH + Duration::from_millis(ts as u64)
-        } else {
-            // handle negative timestamp
-            let nts = Duration::from_millis(-ts as u64);
-            time::UNIX_EPOCH - nts
-        }
-    }
+    // fn unix_ts_to_systime(&self, ts: i64) -> SystemTime {
+    //     if ts >= 0 {
+    //         UNIX_EPOCH + Duration::from_millis(ts as u64)
+    //     } else {
+    //         // handle negative timestamp
+    //         let nts = Duration::from_millis(-ts as u64);
+    //         UNIX_EPOCH - nts
+    //     }
+    // }
 
     fn sign(&self, unix_ts: i64, signing_key: &str, body: &str) -> Result<String, Error> {
         let key = self.normalize_key(signing_key);
