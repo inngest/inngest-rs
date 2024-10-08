@@ -71,8 +71,7 @@ impl Signature {
             Some(tsstr) => match tsstr.parse::<i64>() {
                 Ok(ts) => {
                     let now = time::now();
-                    let valid =
-                        Duration::from_millis((now - ts) as u64) <= Duration::from_secs(60 * 5);
+                    let valid = (now - ts) <= (60 * 5); // within 5m
 
                     println!(
                         "DEBUG:\n  Timestamp: {}\n  Now: {}\n  SMap: {:#?}\n  Ignore: {}\n  Within Range: {}\n",
