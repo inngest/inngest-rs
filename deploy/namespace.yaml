@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rust-sdk
+  labels:
+    # required to make sure pods are ready after LB has completed their health checks
+    elbv2.k8s.aws/pod-readiness-gate-inject: enabled

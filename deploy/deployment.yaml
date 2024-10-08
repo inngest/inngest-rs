@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rust-sdk
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  template:
+    spec:
+      # allow enough time for graceful termination
+      terminationGracePeriodSeconds: 600
+      topologySpreadConstraints:
+        - topologyKey: "topology.kubernetes.io/zone"
+          maxSkew: 1
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: rust-sdk
+      serviceAccountName: rust-sdk
+      containers:
+        - image: rust-sdk:TO_BE_REPLACED
+          imagePullPolicy: IfNotPresent
+          name: axum
+          ports:
+            - containerPort: 3000
+          resources:
+            limits:
+              memory: 100Mi
+            requests:
+              cpu: 0.5
+          envFrom:
+            - configMapRef:
+                name: common
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            successThreshold: 3
+            failureThreshold: 3
+          lifecycle:
+            # required for LB to register and drain target
+            # ref: https://aws.github.io/aws-eks-best-practices/networking/loadbalancing/loadbalancing/#ensure-pods-are-deregistered-from-load-balancers-before-termination
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 180"]
