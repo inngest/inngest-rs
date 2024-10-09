@@ -78,7 +78,7 @@ impl From<UserLandError> for inngest::result::Error {
 #[serde(untagged)]
 enum Data {
     TestData { name: String, data: u8 },
-    Hello { num: Option<u32> }
+    Hello { num: Option<u32> },
 }
 
 fn dummy_fn() -> ServableFn<Data, Error> {
