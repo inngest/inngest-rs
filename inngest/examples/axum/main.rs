@@ -85,10 +85,7 @@ fn dummy_fn() -> ServableFn<Data, Error> {
     create_function(
         FunctionOpts::new("dummy-func")
             .name("Dummy func"),
-        Trigger::EventTrigger {
-            event: "test/event".to_string(),
-            expression: None,
-        },
+        Trigger::event("test/event"),
         move |input: Input<Data>, step: StepTool| async move {
             println!("In dummy function");
 
@@ -127,10 +124,7 @@ fn hello_fn() -> ServableFn<Data, Error> {
     create_function(
         FunctionOpts::new("hello-func")
             .name("Hello func"),
-        Trigger::EventTrigger {
-            event: "test/hello".to_string(),
-            expression: None,
-        },
+        Trigger::event("test/hello"),
         |input: Input<Data>, step: StepTool| async move {
             println!("In hello function");
 
@@ -165,10 +159,7 @@ fn step_run() -> ServableFn<Data, Error> {
     create_function(
         FunctionOpts::new("step-run")
             .name("Step run"),
-        Trigger::EventTrigger {
-            event: "test/step-run".to_string(),
-            expression: None,
-        },
+        Trigger::event("test/step-run"),
         call_some_step_function,
     )
 }
@@ -177,10 +168,7 @@ fn incorrectly_propagates_error() -> ServableFn<Data, Error> {
     create_function(
         FunctionOpts::new("step-run")
             .name("Step run"),
-        Trigger::EventTrigger {
-            event: "test/step-run-incorrect".to_string(),
-            expression: None,
-        },
+        Trigger::event("test/step-run-incorrect"),
         |_input: Input<Data>, step: StepTool| async move {
             let some_captured_variable = "captured".to_string();
 
@@ -207,10 +195,7 @@ fn fallible_step_run() -> ServableFn<Data, Error> {
     create_function(
         FunctionOpts::new("fallible-step-run")
             .name("Fallible Step run"),
-        Trigger::EventTrigger {
-            event: "test/step-run-fallible".to_string(),
-            expression: None,
-        },
+        Trigger::event("test/step-run-fallible"),
         |input: Input<Data>, step: StepTool| async move {
             let step_res = into_dev_result!(
                 step.run("fallible-step-function", || async move {

@@ -126,6 +126,32 @@ pub enum Trigger {
     },
 }
 
+impl Trigger {
+    pub fn event(name: &str) -> Self {
+        Trigger::EventTrigger {
+            event: name.to_string(),
+            expression: None,
+        }
+    }
+
+    #[allow(unused_variables)]
+    pub fn expr(&self, exp: &str) -> Self {
+        match self {
+            Trigger::EventTrigger { event, expression } => Trigger::EventTrigger {
+                event: event.clone(),
+                expression: Some(exp.to_string()),
+            },
+            Trigger::CronTrigger { cron } => Trigger::CronTrigger { cron: cron.clone() },
+        }
+    }
+
+    pub fn cron(cron: &str) -> Self {
+        Trigger::CronTrigger {
+            cron: cron.to_string(),
+        }
+    }
+}
+
 pub fn create_function<T: 'static, E, F>(
     opts: FunctionOpts,
     trigger: Trigger,
