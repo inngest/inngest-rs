@@ -91,12 +91,7 @@ impl<T, E> Handler<T, E> {
         let functions: Vec<Function> = self
             .funcs
             .iter()
-            .map(|(_, f)| {
-                f.function(
-                    &self.app_serve_origin(headers),
-                    &self.app_serve_path()
-                )
-            })
+            .map(|(_, f)| f.function(&self.app_serve_origin(headers), &self.app_serve_path()))
             .collect();
 
         let req = Request {

@@ -1,7 +1,7 @@
 use serde_json::Value;
 use slug::slugify;
-use url::Url;
 use std::future::Future;
+use url::Url;
 
 use crate::{
     config::Config,
@@ -9,7 +9,7 @@ use crate::{
     function::{FunctionOpts, Input, ServableFn, Trigger},
     handler::Kind,
     result::DevError,
-    step_tool::Step as StepTool
+    step_tool::Step as StepTool,
 };
 
 const API_ORIGIN_DEV: &str = "http://127.0.0.1:8288";
@@ -84,11 +84,15 @@ impl Inngest {
         self
     }
 
-    pub fn create_function<T: 'static, E, F: Future<Output = Result<Value, E>> + Send + Sync + 'static>(
+    pub fn create_function<
+        T: 'static,
+        E,
+        F: Future<Output = Result<Value, E>> + Send + Sync + 'static,
+    >(
         &self,
         opts: FunctionOpts,
         trigger: Trigger,
-        func: impl Fn(Input<T>, StepTool) -> F + Send + Sync + 'static
+        func: impl Fn(Input<T>, StepTool) -> F + Send + Sync + 'static,
     ) -> ServableFn<T, E> {
         use futures::future::FutureExt;
 
@@ -97,7 +101,7 @@ impl Inngest {
             app_id,
             opts,
             trigger,
-            func: Box::new(move |input, step| func(input, step).boxed())
+            func: Box::new(move |input, step| func(input, step).boxed()),
         }
     }
 

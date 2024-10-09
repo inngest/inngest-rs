@@ -85,8 +85,7 @@ fn dummy_fn(client: &Inngest) -> ServableFn<Data, Error> {
     let invoke_id = fallible_step_run(client).slug();
 
     client.create_function(
-        FunctionOpts::new("dummy-func")
-            .name("Dummy func"),
+        FunctionOpts::new("dummy-func").name("Dummy func"),
         Trigger::event("test/event"),
         move |_input: Input<Data>, step: StepTool| {
             let function_id = invoke_id.clone();
@@ -124,8 +123,7 @@ fn dummy_fn(client: &Inngest) -> ServableFn<Data, Error> {
 
 fn hello_fn(client: &Inngest) -> ServableFn<Data, Error> {
     client.create_function(
-        FunctionOpts::new("hello-func")
-            .name("Hello func"),
+        FunctionOpts::new("hello-func").name("Hello func"),
         Trigger::event("test/hello"),
         |input: Input<Data>, step: StepTool| async move {
             println!("In hello function");
@@ -159,8 +157,7 @@ async fn call_some_step_function(_input: Input<Data>, step: StepTool) -> Result<
 
 fn step_run(client: &Inngest) -> ServableFn<Data, Error> {
     client.create_function(
-        FunctionOpts::new("step-run")
-            .name("Step run"),
+        FunctionOpts::new("step-run").name("Step run"),
         Trigger::event("test/step-run"),
         call_some_step_function,
     )
@@ -168,8 +165,7 @@ fn step_run(client: &Inngest) -> ServableFn<Data, Error> {
 
 fn incorrectly_propagates_error(client: &Inngest) -> ServableFn<Data, Error> {
     client.create_function(
-        FunctionOpts::new("step-run")
-            .name("Step run"),
+        FunctionOpts::new("step-run").name("Step run"),
         Trigger::event("test/step-run-incorrect"),
         |_input: Input<Data>, step: StepTool| async move {
             let some_captured_variable = "captured".to_string();
@@ -195,8 +191,7 @@ fn incorrectly_propagates_error(client: &Inngest) -> ServableFn<Data, Error> {
 
 fn fallible_step_run(client: &Inngest) -> ServableFn<Data, Error> {
     client.create_function(
-        FunctionOpts::new("fallible-step-run")
-            .name("Fallible Step run"),
+        FunctionOpts::new("fallible-step-run").name("Fallible Step run"),
         Trigger::event("test/step-run-fallible"),
         |input: Input<Data>, step: StepTool| async move {
             let step_res = into_dev_result!(
