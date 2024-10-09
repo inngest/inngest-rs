@@ -5,7 +5,7 @@ use axum::{
 use inngest::{
     client::Inngest,
     event::Event,
-    function::{create_function, FunctionOps, Input, ServableFn, Trigger},
+    function::{create_function, FunctionOpts, Input, ServableFn, Trigger},
     handler::Handler,
     into_dev_result,
     result::{DevError, Error},
@@ -83,10 +83,8 @@ enum Data {
 
 fn dummy_fn() -> ServableFn<Data, Error> {
     create_function(
-        FunctionOps {
-            id: "Dummy func".to_string(),
-            ..Default::default()
-        },
+        FunctionOpts::new("dummy-func")
+            .name("Dummy func"),
         Trigger::EventTrigger {
             event: "test/event".to_string(),
             expression: None,
@@ -127,10 +125,8 @@ fn dummy_fn() -> ServableFn<Data, Error> {
 
 fn hello_fn() -> ServableFn<Data, Error> {
     create_function(
-        FunctionOps {
-            id: "Hello func".to_string(),
-            ..Default::default()
-        },
+        FunctionOpts::new("hello-func")
+            .name("Hello func"),
         Trigger::EventTrigger {
             event: "test/hello".to_string(),
             expression: None,
@@ -167,10 +163,8 @@ async fn call_some_step_function(_input: Input<Data>, step: StepTool) -> Result<
 
 fn step_run() -> ServableFn<Data, Error> {
     create_function(
-        FunctionOps {
-            id: "Step run".to_string(),
-            ..Default::default()
-        },
+        FunctionOpts::new("step-run")
+            .name("Step run"),
         Trigger::EventTrigger {
             event: "test/step-run".to_string(),
             expression: None,
@@ -181,10 +175,8 @@ fn step_run() -> ServableFn<Data, Error> {
 
 fn incorrectly_propagates_error() -> ServableFn<Data, Error> {
     create_function(
-        FunctionOps {
-            id: "Step run".to_string(),
-            ..Default::default()
-        },
+        FunctionOpts::new("step-run")
+            .name("Step run"),
         Trigger::EventTrigger {
             event: "test/step-run-incorrect".to_string(),
             expression: None,
@@ -213,10 +205,8 @@ fn incorrectly_propagates_error() -> ServableFn<Data, Error> {
 
 fn fallible_step_run() -> ServableFn<Data, Error> {
     create_function(
-        FunctionOps {
-            id: "Fallible Step run".to_string(),
-            ..Default::default()
-        },
+        FunctionOpts::new("fallible-step-run")
+            .name("Fallible Step run"),
         Trigger::EventTrigger {
             event: "test/step-run-fallible".to_string(),
             expression: None,

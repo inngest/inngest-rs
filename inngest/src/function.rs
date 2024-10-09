@@ -26,15 +26,15 @@ pub struct InputCtx {
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionOps {
+pub struct FunctionOpts {
     pub id: String,
     pub name: Option<String>,
     pub retries: u8,
 }
 
-impl Default for FunctionOps {
+impl Default for FunctionOpts {
     fn default() -> Self {
-        FunctionOps {
+        FunctionOpts {
             id: String::new(),
             name: None,
             retries: 3,
@@ -42,11 +42,25 @@ impl Default for FunctionOps {
     }
 }
 
+impl FunctionOpts {
+    pub fn new(id: &str) -> Self {
+        FunctionOpts {
+            id: id.to_string(),
+            ..Default::default()
+        }
+    }
+
+    pub fn name(mut self, name: &str) -> Self {
+        self.name = Some(name.to_string());
+        self
+    }
+}
+
 type Func<T, E> =
     dyn Fn(Input<T>, StepTool) -> BoxFuture<'static, Result<Value, E>> + Send + Sync + 'static;
 
 pub struct ServableFn<T: 'static, E> {
-    pub opts: FunctionOps,
+    pub opts: FunctionOpts,
     pub trigger: Trigger,
     pub func: Box<Func<T, E>>,
 }
@@ -113,7 +127,7 @@ pub enum Trigger {
 }
 
 pub fn create_function<T: 'static, E, F>(
-    opts: FunctionOps,
+    opts: FunctionOpts,
     trigger: Trigger,
     func: impl Fn(Input<T>, StepTool) -> F + Send + Sync + 'static,
 ) -> ServableFn<T, E>

@@ -23,7 +23,7 @@ impl Default for Request {
         Request {
             app_name: "RustDev".to_string(),
             deploy_type: "ping".to_string(),
-            url: "".to_string(),
+            url: String::new(),
             v: "1".to_string(),
             sdk: format!("rust:v{}", version),
             framework: "rust".to_string(),

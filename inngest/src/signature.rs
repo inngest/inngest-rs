@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 
 use hmac::{Hmac, Mac};
 use regex::Regex;

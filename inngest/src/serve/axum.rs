@@ -8,14 +8,9 @@ use crate::{
 use axum::{
     extract::{Query, State},
     http::HeaderMap,
-    Json,
 };
 use serde::Deserialize;
-use serde_json::Value;
 use std::{fmt::Debug, sync::Arc};
-
-// TODO:
-// provide a macro for simple import into Axum routes
 
 pub async fn register<T, E>(
     hmap: HeaderMap,
@@ -31,7 +26,6 @@ pub async fn invoke<T, E>(
     Query(query): Query<RunQueryParams>,
     State(handler): State<Arc<Handler<T, E>>>,
     raw: String,
-    // Json(body): Json<Value>,
 ) -> Result<SdkResponse, Error>
 where
     T: for<'de> Deserialize<'de> + Debug,
