@@ -9,7 +9,7 @@ use crate::{
     client::Inngest,
     config::Config,
     event::Event,
-    function::{Function, Input, InputCtx, ServableFn, Step, StepRetry, StepRuntime},
+    function::{Function, Input, InputCtx, ServableFn},
     header::Headers,
     result::{Error, FlowControlVariant, SdkResponse},
     sdk::Request,
@@ -33,7 +33,7 @@ pub struct RunQueryParams {
 }
 
 impl<T, E> Handler<T, E> {
-    pub fn new(client: Inngest) -> Self {
+    pub fn new(client: &Inngest) -> Self {
         let signing_key = Config::signing_key();
         let serve_origin = Config::serve_origin();
         let serve_path = Config::serve_path();
@@ -87,40 +87,20 @@ impl<T, E> Handler<T, E> {
     pub async fn sync(&self, headers: &Headers, framework: &str) -> Result<(), String> {
         let kind = headers.server_kind();
 
+        let app_id = self.inngest.app_id();
         let functions: Vec<Function> = self
             .funcs
             .iter()
             .map(|(_, f)| {
-                let mut steps = HashMap::new();
-                steps.insert(
-                    "step".to_string(),
-                    Step {
-                        id: "step".to_string(),
-                        name: "step".to_string(),
-                        runtime: StepRuntime {
-                            url: format!(
-                                "{}{}?fnId={}&step=step",
-                                self.app_serve_origin(headers),
-                                self.app_serve_path(),
-                                f.slug()
-                            ),
-                            method: "http".to_string(),
-                        },
-                        retries: StepRetry { attempts: 3 },
-                    },
-                );
-
-                Function {
-                    id: f.slug(),
-                    name: f.slug(),
-                    triggers: vec![f.trigger()],
-                    steps,
-                }
+                f.function(
+                    &self.app_serve_origin(headers),
+                    &self.app_serve_path()
+                )
             })
             .collect();
 
         let req = Request {
-            app_name: self.inngest.app_id.clone(),
+            app_name: app_id.clone(),
             framework: framework.to_string(),
             functions,
             url: format!(
@@ -219,7 +199,8 @@ impl<T, E> Handler<T, E> {
             },
         };
 
-        let step_tool = StepTool::new(&self.inngest.app_id, &data.steps);
+        let app_id = self.inngest.app_id();
+        let step_tool = StepTool::new(&app_id, &data.steps);
 
         match std::panic::catch_unwind(AssertUnwindSafe(|| (func.func)(input, step_tool.clone()))) {
             Ok(fut) => {

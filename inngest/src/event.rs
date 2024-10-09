@@ -12,7 +12,9 @@ where
     pub id: Option<String>,
     pub name: String,
     pub data: T,
+    #[serde(rename = "ts")]
     pub timestamp: Option<i64>,
+    #[serde(rename = "v")]
     pub version: Option<String>,
 }
 
