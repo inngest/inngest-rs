@@ -75,12 +75,13 @@ impl From<UserLandError> for inngest::result::Error {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-struct TestData {
-    name: String,
-    data: u8,
+#[serde(untagged)]
+enum Data {
+    TestData { name: String, data: u8 },
+    Hello { num: Option<u32> },
 }
 
-fn dummy_fn() -> ServableFn<TestData, Error> {
+fn dummy_fn() -> ServableFn<Data, Error> {
     create_function(
         FunctionOps {
             id: "Dummy func".to_string(),
@@ -90,7 +91,7 @@ fn dummy_fn() -> ServableFn<TestData, Error> {
             event: "test/event".to_string(),
             expression: None,
         },
-        move |input: Input<TestData>, step: StepTool| async move {
+        move |input: Input<Data>, step: StepTool| async move {
             println!("In dummy function");
 
             let evt = &input.event;
@@ -124,7 +125,7 @@ fn dummy_fn() -> ServableFn<TestData, Error> {
     )
 }
 
-fn hello_fn() -> ServableFn<TestData, Error> {
+fn hello_fn() -> ServableFn<Data, Error> {
     create_function(
         FunctionOps {
             id: "Hello func".to_string(),
@@ -134,7 +135,7 @@ fn hello_fn() -> ServableFn<TestData, Error> {
             event: "test/hello".to_string(),
             expression: None,
         },
-        |input: Input<TestData>, step: StepTool| async move {
+        |input: Input<Data>, step: StepTool| async move {
             println!("In hello function");
 
             let evt = &input.event;
@@ -147,7 +148,7 @@ fn hello_fn() -> ServableFn<TestData, Error> {
     )
 }
 
-async fn call_some_step_function(_input: Input<TestData>, step: StepTool) -> Result<Value, Error> {
+async fn call_some_step_function(_input: Input<Data>, step: StepTool) -> Result<Value, Error> {
     let some_captured_variable = "captured".to_string();
 
     let step_res = step
@@ -164,7 +165,7 @@ async fn call_some_step_function(_input: Input<TestData>, step: StepTool) -> Res
     Ok(step_res)
 }
 
-fn step_run() -> ServableFn<TestData, Error> {
+fn step_run() -> ServableFn<Data, Error> {
     create_function(
         FunctionOps {
             id: "Step run".to_string(),
@@ -178,7 +179,7 @@ fn step_run() -> ServableFn<TestData, Error> {
     )
 }
 
-fn incorrectly_propagates_error() -> ServableFn<TestData, Error> {
+fn incorrectly_propagates_error() -> ServableFn<Data, Error> {
     create_function(
         FunctionOps {
             id: "Step run".to_string(),
@@ -188,7 +189,7 @@ fn incorrectly_propagates_error() -> ServableFn<TestData, Error> {
             event: "test/step-run-incorrect".to_string(),
             expression: None,
         },
-        |_input: Input<TestData>, step: StepTool| async move {
+        |_input: Input<Data>, step: StepTool| async move {
             let some_captured_variable = "captured".to_string();
 
             let res = step
@@ -210,7 +211,7 @@ fn incorrectly_propagates_error() -> ServableFn<TestData, Error> {
     )
 }
 
-fn fallible_step_run() -> ServableFn<TestData, Error> {
+fn fallible_step_run() -> ServableFn<Data, Error> {
     create_function(
         FunctionOps {
             id: "Fallible Step run".to_string(),
@@ -220,7 +221,7 @@ fn fallible_step_run() -> ServableFn<TestData, Error> {
             event: "test/step-run-fallible".to_string(),
             expression: None,
         },
-        |input: Input<TestData>, step: StepTool| async move {
+        |input: Input<Data>, step: StepTool| async move {
             let step_res = into_dev_result!(
                 step.run("fallible-step-function", || async move {
                     // if even, fail
