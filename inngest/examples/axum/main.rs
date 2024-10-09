@@ -124,7 +124,7 @@ fn dummy_fn() -> ServableFn<TestData, Error> {
     )
 }
 
-fn hello_fn() -> ServableFn<TestData, Error> {
+fn hello_fn() -> ServableFn<Value, Error> {
     create_function(
         FunctionOps {
             id: "Hello func".to_string(),
@@ -134,7 +134,7 @@ fn hello_fn() -> ServableFn<TestData, Error> {
             event: "test/hello".to_string(),
             expression: None,
         },
-        |input: Input<TestData>, step: StepTool| async move {
+        |input: Input<Value>, step: StepTool| async move {
             println!("In hello function");
 
             let evt = &input.event;
