@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     event::Event,
     function::{Function, Input, InputCtx, ServableFn},
-    header::Headers,
+    header::{self, Headers},
     result::{Error, FlowControlVariant, SdkResponse},
     sdk::Request,
     signature::Signature,
@@ -66,13 +66,13 @@ impl<T, E> Handler<T, E> {
         self.funcs.insert(func.slug(), func);
     }
 
-    fn app_serve_origin(&self, _headers: &Headers) -> String {
+    fn app_serve_origin(&self, headers: &Headers) -> String {
         if let Some(origin) = self.serve_origin.clone() {
             return origin;
         }
-        // if let Some(host) = headers.get("host") {
-        //     return host.to_string();
-        // }
+        if let Some(host) = headers.host() {
+            return host;
+        }
 
         "http://127.0.0.1:3000".to_string()
     }

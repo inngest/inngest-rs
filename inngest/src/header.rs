@@ -6,6 +6,7 @@ pub(crate) const CONTENT_TYPE: &str = "content-type";
 pub(crate) const RETRY_AFTER: &str = "retry-after";
 pub(crate) const SERVER_TIMING: &str = "server-timing";
 pub(crate) const USER_AGENT: &str = "user-agent";
+pub(crate) const HOST: &str = "host";
 
 // Inngest specific ones
 pub(crate) const INNGEST_ENV: &str = "x-inngest-env";
@@ -33,6 +34,10 @@ impl Headers {
 
     pub fn signature(&self) -> Option<String> {
         self.0.get(INNGEST_SIGNATURE).map(|v| v.clone())
+    }
+
+    pub fn host(&self) -> Option<String> {
+        self.0.get(HOST).map(|v| v.clone())
     }
 }
 
