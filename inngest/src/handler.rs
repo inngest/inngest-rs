@@ -194,8 +194,7 @@ impl<T, E> Handler<T, E> {
             },
         };
 
-        let app_id = self.inngest.app_id();
-        let step_tool = StepTool::new(&app_id, &data.steps);
+        let step_tool = StepTool::new(&data.steps);
 
         match std::panic::catch_unwind(AssertUnwindSafe(|| (func.func)(input, step_tool.clone()))) {
             Ok(fut) => {
