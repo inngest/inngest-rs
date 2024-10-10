@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     event::Event,
     function::{Function, Input, InputCtx, ServableFn},
-    header::{self, Headers},
+    header::{Headers},
     result::{Error, FlowControlVariant, SdkResponse},
     sdk::Request,
     signature::Signature,
@@ -266,24 +266,24 @@ struct RunRequestBody<T: 'static> {
     events: Vec<Event<T>>,
     use_api: bool,
     steps: HashMap<String, Option<Value>>,
-    version: i32,
+    // version: i32,
 }
 
 #[derive(Deserialize, Debug)]
 struct RunRequestCtx {
     attempt: u8,
-    disable_immediate_execution: bool,
+    // disable_immediate_execution: bool,
     env: String,
-    fn_id: String,
+    // fn_id: String,
     run_id: String,
-    step_id: String,
-    stack: RunRequestCtxStack,
+    // step_id: String,
+    // stack: RunRequestCtxStack,
 }
 
 #[derive(Deserialize, Debug)]
 struct RunRequestCtxStack {
-    current: u32,
-    stack: Vec<String>,
+    // current: u32,
+    // stack: Vec<String>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
