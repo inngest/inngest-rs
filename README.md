@@ -9,9 +9,13 @@
     Read the <a href="https://www.inngest.com/docs?ref=github-inngest-rust-readme">documentation</a> and get started in minutes.
   </p>
   <p>
+
     [![crates.io](https://img.shields.io/crates/v/inngest)](https://crates.io/crates/inngest)
+
     [![discord](https://img.shields.io/discord/842170679536517141?label=discord)](https://www.inngest.com/discord)
+
     [![twitter](https://img.shields.io/twitter/follow/inngest?style=social)](https://twitter.com/inngest)
+
   </p>
 </div>
 <hr />
