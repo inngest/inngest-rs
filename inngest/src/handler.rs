@@ -76,9 +76,11 @@ impl<T, E> Handler<T, E> {
         if let Some(origin) = self.serve_origin.clone() {
             return origin;
         }
-        println!("HEADERS {:#?}", headers);
 
         if let Some(host) = headers.host() {
+            // TODO:
+            // - check scheme header
+            // - check the url include 127.0.0.1 or localhost
             return host;
         }
 

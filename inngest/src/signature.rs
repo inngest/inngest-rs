@@ -73,10 +73,6 @@ impl Signature {
                     let now = time::now();
                     let valid = (now - ts) <= (60 * 5); // within 5m
 
-                    println!(
-                        "DEBUG:\n  Timestamp: {}\n  Now: {}\n  SMap: {:#?}\n  Ignore: {}\n  Within Range: {}\n",
-                        ts, now, smap, ignore_ts, valid
-                    );
                     if ignore_ts || valid {
                         match self.sign(ts, &self.key, &self.body) {
                             Ok(sig) => {
