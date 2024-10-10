@@ -66,10 +66,18 @@ impl<T, E> Handler<T, E> {
         self.funcs.insert(func.slug(), func);
     }
 
+    pub fn register_fns(&mut self, funcs: Vec<ServableFn<T, E>>) {
+        for f in funcs {
+            self.funcs.insert(f.slug(), f);
+        }
+    }
+
     fn app_serve_origin(&self, headers: &Headers) -> String {
         if let Some(origin) = self.serve_origin.clone() {
             return origin;
         }
+        println!("HEADERS {:#?}", headers);
+
         if let Some(host) = headers.host() {
             return host;
         }

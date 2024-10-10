@@ -20,11 +20,13 @@ use std::{sync::Arc, time::Duration};
 async fn main() {
     let client = Inngest::new("rust-dev");
     let mut inngest_handler = Handler::new(&client);
-    inngest_handler.register_fn(dummy_fn(&client));
-    inngest_handler.register_fn(hello_fn(&client));
-    inngest_handler.register_fn(step_run(&client));
-    inngest_handler.register_fn(fallible_step_run(&client));
-    inngest_handler.register_fn(incorrectly_propagates_error(&client));
+    inngest_handler.register_fns(vec![
+        dummy_fn(&client),
+        hello_fn(&client),
+        step_run(&client),
+        fallible_step_run(&client),
+        incorrectly_propagates_error(&client)
+    ]);
 
     let inngest_state = Arc::new(inngest_handler);
 

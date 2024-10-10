@@ -19,6 +19,7 @@ pub(crate) const INNGEST_SERVER_KIND: &str = "x-inngest-server-kind";
 pub(crate) const INNGEST_SIGNATURE: &str = "x-inngest-signature";
 // pub(crate) const INNGEST_SYNC_KIND: &str = "x-inngest-sync-kind";
 
+#[derive(Debug)]
 pub struct Headers(HashMap<String, String>);
 
 impl Headers {
