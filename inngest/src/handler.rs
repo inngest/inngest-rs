@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     event::Event,
     function::{Function, Input, InputCtx, ServableFn},
-    header::{Headers},
+    header::Headers,
     result::{Error, FlowControlVariant, SdkResponse},
     sdk::Request,
     signature::Signature,
