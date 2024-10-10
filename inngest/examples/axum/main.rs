@@ -5,7 +5,7 @@ use axum::{
 use inngest::{
     client::Inngest,
     event::Event,
-    function::{create_function, FunctionOps, Input, ServableFn, Trigger},
+    function::{FunctionOpts, Input, ServableFn, Trigger},
     handler::Handler,
     into_dev_result,
     result::{DevError, Error},
@@ -19,12 +19,14 @@ use std::{sync::Arc, time::Duration};
 #[tokio::main]
 async fn main() {
     let client = Inngest::new("rust-dev");
-    let mut inngest_handler = Handler::new(client);
-    inngest_handler.register_fn(dummy_fn());
-    inngest_handler.register_fn(hello_fn());
-    inngest_handler.register_fn(step_run());
-    inngest_handler.register_fn(fallible_step_run());
-    inngest_handler.register_fn(incorrectly_propagates_error());
+    let mut inngest_handler = Handler::new(&client);
+    inngest_handler.register_fns(vec![
+        dummy_fn(&client),
+        hello_fn(&client),
+        step_run(&client),
+        fallible_step_run(&client),
+        incorrectly_propagates_error(&client)
+    ]);
 
     let inngest_state = Arc::new(inngest_handler);
 
@@ -81,60 +83,50 @@ enum Data {
     Hello { num: Option<u32> },
 }
 
-fn dummy_fn() -> ServableFn<Data, Error> {
-    create_function(
-        FunctionOps {
-            id: "Dummy func".to_string(),
-            ..Default::default()
-        },
-        Trigger::EventTrigger {
-            event: "test/event".to_string(),
-            expression: None,
-        },
-        move |input: Input<Data>, step: StepTool| async move {
-            println!("In dummy function");
+fn dummy_fn(client: &Inngest) -> ServableFn<Data, Error> {
+    let invoke_id = fallible_step_run(client).slug();
 
-            let evt = &input.event;
-            println!("Event: {}", evt.name);
-            step.sleep("sleep-test", Duration::from_secs(3))?;
+    client.create_function(
+        FunctionOpts::new("dummy-func").name("Dummy func"),
+        Trigger::event("test/event"),
+        move |_input: Input<Data>, step: StepTool| {
+            let function_id = invoke_id.clone();
 
-            let resp: Value = step.invoke(
-                "test-invoke",
-                InvokeFunctionOpts {
-                    function_id: fallible_step_run().slug(),
-                    data: json!({ "name": "yolo", "data": 200 }),
-                    timeout: None,
-                },
-            )?;
+            async move {
+                // let evt = &input.event;
+                // println!("Event: {:#?}", evt);
+                step.sleep("sleep-test", Duration::from_secs(3))?;
 
-            println!("Invoke: {:?}", resp);
+                let _: Value = step.invoke(
+                    "test-invoke",
+                    InvokeFunctionOpts {
+                        function_id,
+                        data: json!({ "name": "yolo", "data": 200 }),
+                        timeout: None,
+                    },
+                )?;
 
-            let evt: Option<Event<Value>> = step.wait_for_event(
-                "wait",
-                WaitForEventOpts {
-                    event: "test/wait".to_string(),
-                    timeout: Duration::from_secs(60),
-                    if_exp: None,
-                },
-            )?;
+                // println!("Invoke: {:?}", resp);
 
-            println!("Event: {:?}", evt);
+                let evt: Option<Event<Value>> = step.wait_for_event(
+                    "wait",
+                    WaitForEventOpts {
+                        event: "test/wait".to_string(),
+                        timeout: Duration::from_secs(60),
+                        if_exp: None,
+                    },
+                )?;
 
-            Ok(json!({ "dummy": true }))
+                Ok(json!({ "dummy": true, "evt": evt }))
+            }
         },
     )
 }
 
-fn hello_fn() -> ServableFn<Data, Error> {
-    create_function(
-        FunctionOps {
-            id: "Hello func".to_string(),
-            ..Default::default()
-        },
-        Trigger::EventTrigger {
-            event: "test/hello".to_string(),
-            expression: None,
-        },
+fn hello_fn(client: &Inngest) -> ServableFn<Data, Error> {
+    client.create_function(
+        FunctionOpts::new("hello-func").name("Hello func"),
+        Trigger::event("test/hello"),
         |input: Input<Data>, step: StepTool| async move {
             println!("In hello function");
 
@@ -165,30 +157,18 @@ async fn call_some_step_function(_input: Input<Data>, step: StepTool) -> Result<
     Ok(step_res)
 }
 
-fn step_run() -> ServableFn<Data, Error> {
-    create_function(
-        FunctionOps {
-            id: "Step run".to_string(),
-            ..Default::default()
-        },
-        Trigger::EventTrigger {
-            event: "test/step-run".to_string(),
-            expression: None,
-        },
+fn step_run(client: &Inngest) -> ServableFn<Data, Error> {
+    client.create_function(
+        FunctionOpts::new("step-run").name("Step run"),
+        Trigger::event("test/step-run"),
         call_some_step_function,
     )
 }
 
-fn incorrectly_propagates_error() -> ServableFn<Data, Error> {
-    create_function(
-        FunctionOps {
-            id: "Step run".to_string(),
-            ..Default::default()
-        },
-        Trigger::EventTrigger {
-            event: "test/step-run-incorrect".to_string(),
-            expression: None,
-        },
+fn incorrectly_propagates_error(client: &Inngest) -> ServableFn<Data, Error> {
+    client.create_function(
+        FunctionOpts::new("step-run").name("Step run"),
+        Trigger::event("test/step-run-incorrect"),
         |_input: Input<Data>, step: StepTool| async move {
             let some_captured_variable = "captured".to_string();
 
@@ -211,16 +191,10 @@ fn incorrectly_propagates_error() -> ServableFn<Data, Error> {
     )
 }
 
-fn fallible_step_run() -> ServableFn<Data, Error> {
-    create_function(
-        FunctionOps {
-            id: "Fallible Step run".to_string(),
-            ..Default::default()
-        },
-        Trigger::EventTrigger {
-            event: "test/step-run-fallible".to_string(),
-            expression: None,
-        },
+fn fallible_step_run(client: &Inngest) -> ServableFn<Data, Error> {
+    client.create_function(
+        FunctionOpts::new("fallible-step-run").name("Fallible Step run"),
+        Trigger::event("test/step-run-fallible"),
         |input: Input<Data>, step: StepTool| async move {
             let step_res = into_dev_result!(
                 step.run("fallible-step-function", || async move {

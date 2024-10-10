@@ -60,18 +60,4 @@ impl Config {
             }
         }
     }
-
-    fn read_env_bool(key: &str) -> Option<bool> {
-        if let Some(v) = Self::read_env_str(key) {
-            return match v.parse::<bool>() {
-                Ok(b) => Some(b),
-                Err(err) => {
-                    println!("Error parsing variable '{}' as bool: {:?}", key, err);
-                    None
-                }
-            };
-        }
-
-        None
-    }
 }
