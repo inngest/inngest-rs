@@ -25,7 +25,7 @@ async fn main() {
         hello_fn(&client),
         step_run(&client),
         fallible_step_run(&client),
-        incorrectly_propagates_error(&client)
+        incorrectly_propagates_error(&client),
     ]);
 
     let inngest_state = Arc::new(inngest_handler);
@@ -139,7 +139,8 @@ fn hello_fn(client: &Inngest) -> ServableFn<Data, Error> {
                     }
 
                     Ok(json!({ "returned from within step.run": true }))
-                }).await
+                })
+                .await
             )?;
 
             step.sleep("sleep-test", Duration::from_secs(3))?;
