@@ -80,7 +80,7 @@ impl From<UserLandError> for inngest::result::Error {
 #[serde(untagged)]
 enum Data {
     TestData { name: String, data: u8 },
-    Hello { num: Option<u32> },
+    Hello { msg: String },
 }
 
 fn dummy_fn(client: &Inngest) -> ServableFn<Data, Error> {
@@ -128,14 +128,32 @@ fn hello_fn(client: &Inngest) -> ServableFn<Data, Error> {
         FunctionOpts::new("hello-func").name("Hello func"),
         Trigger::event("test/hello"),
         |input: Input<Data>, step: StepTool| async move {
-            println!("In hello function");
+            let step_res = into_dev_result!(
+                step.run("fallible-step-function", || async move {
+                    // if even, fail
+                    if input.ctx.attempt % 2 == 0 {
+                        return Err(UserLandError::General(format!(
+                            "Attempt {}",
+                            input.ctx.attempt
+                        )));
+                    }
 
-            let evt = &input.event;
-            println!("Event: {}", evt.name);
+                    Ok(json!({ "returned from within step.run": true }))
+                }).await
+            )?;
 
-            step.sleep("wait-5s", Duration::from_secs(5))?;
+            step.sleep("sleep-test", Duration::from_secs(3))?;
 
-            Ok(json!("test hello"))
+            let evt: Option<Event<Value>> = step.wait_for_event(
+                "wait",
+                WaitForEventOpts {
+                    event: "test/wait".to_string(),
+                    timeout: Duration::from_secs(60),
+                    if_exp: None,
+                },
+            )?;
+
+            Ok(json!({ "hello": true, "evt": evt, "step": step_res }))
         },
     )
 }

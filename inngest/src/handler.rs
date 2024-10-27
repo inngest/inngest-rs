@@ -78,6 +78,10 @@ impl<T, E> Handler<T, E> {
         }
 
         if let Some(host) = headers.host() {
+            if host.contains("localhost") {
+                return format!("http://{}", &host);
+            }
+
             // TODO:
             // - check scheme header
             // - check the url include 127.0.0.1 or localhost

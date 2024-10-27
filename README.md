@@ -39,3 +39,78 @@ inngest = "0.1"
 ## Examples
 
 - [axum](./inngest/examples/axum/main.rs)
+
+```rs
+use axum::{
+  routing::{get, put},
+  Router
+};
+
+#[tokio::main]
+async fn main() {
+    let client = Inngest::new("rust-app");
+    let mut inngest_handler = Handler::new(&client);
+    inngest_handler.register_fns(vec![
+         hello_fn(&client)
+     ]);
+
+    let inngest_state = Arc::new(inngest_handler);
+
+    let app = Router::new()
+        .route("/", get(|| async { "OK!\n" }))
+        .route(
+            "/api/inngest",
+            put(serve::axum::register).post(serve::axum::invoke),
+        )
+        .with_state(inngest_state);
+
+    let addr = "[::]:3000".parse::<std::net::SocketAddr>().unwrap();
+
+    // run it with hyper on localhost:3000
+    axum::Server::bind(&addr)
+        .serve(app.into_make_service())
+        .await
+        .unwrap();
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(untagged)]
+enum Data {
+    Hello { msg: String },
+}
+
+fn hello_fn(client: &Inngest) -> ServableFn<Data, Error> {
+    client.create_function(
+        FunctionOpts::new("hello-func").name("Hello func"),
+        Trigger::event("test/hello"),
+        |input: Input<Data>, step: StepTool| async move {
+            let step_res = into_dev_result!(
+                step.run("fallible-step-function", || async move {
+                    // if even, fail
+                    if input.ctx.attempt % 2 == 0 {
+                        return Err(UserLandError::General(format!(
+                            "Attempt {}",
+                            input.ctx.attempt
+                        )));
+                    }
+
+                    Ok(json!({ "returned from within step.run": true }))
+                }).await
+            )?;
+
+            step.sleep("sleep-test", Duration::from_secs(3))?;
+
+            let evt: Option<Event<Value>> = step.wait_for_event(
+                "wait",
+                WaitForEventOpts {
+                    event: "test/wait".to_string(),
+                    timeout: Duration::from_secs(60),
+                    if_exp: None,
+                },
+            )?;
+
+            Ok(json!({ "hello": true, "evt": evt, "step": step_res }))
+        },
+    )
+}
+```
