@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Debug, panic::AssertUnwindSafe};
 
 use futures::FutureExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::{
@@ -96,6 +96,10 @@ impl<T, E> Handler<T, E> {
             return path;
         }
         "/api/inngest".to_string()
+    }
+
+    pub async fn introspect(&self, headers: &Headers) -> Result<(), String> {
+        Ok(())
     }
 
     pub async fn sync(&self, headers: &Headers, framework: &str) -> Result<(), String> {
@@ -299,8 +303,51 @@ struct RunRequestCtxStack {
     // stack: Vec<String>,
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Serialize)]
 pub enum Kind {
     Dev,
     Cloud,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum IntrospectResult {
+    Unauthenticated(IntrospectUnauthedResult),
+    Authenticated(IntrospecAuthedResult)
+}
+
+#[derive(Serialize)]
+pub struct IntrospectUnauthedResult {
+    authentication_succeeded: Option<bool>,
+    extra: Option<Value>,
+    function_count: u32,
+    has_event_key: bool,
+    has_signing_key: bool,
+    has_signing_key_fallback: bool,
+    mode: Kind,
+    schema_version: String
+}
+
+#[derive(Serialize)]
+pub struct IntrospecAuthedResult {
+    app_id: String,
+    api_origin: String,
+    event_api_origin: String,
+    event_key_hash: Option<String>,
+    authentication_succeeded: bool,
+    env: Option<String>,
+    extra: Option<Value>,
+    framework: String,
+    function_count: u32,
+    has_event_key: bool,
+    has_signing_key: bool,
+    has_signing_key_fallback: bool,
+    mode: Kind,
+    schema_version: String,
+    sdk_language: String,
+    sdk_version: String,
+    serve_origin: Option<String>,
+    serve_path: Option<String>,
+    signing_key_fallback_hash: Option<String>,
+    signing_key_hash: Option<String>,
 }
