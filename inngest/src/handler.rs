@@ -152,11 +152,11 @@ impl<T, E> Handler<T, E> {
                 Some(sig) => match self.verify_signature(&sig, raw_body) {
                     Ok(_) => Ok(IntrospectResult::Authenticated(IntrospectAuthedResult {
                         app_id: self.inngest.app_id(),
-                        api_origin: String::new(),
-                        event_api_origin: String::new(),
-                        event_key_hash: None,
+                        api_origin: String::new(), // TODO
+                        event_api_origin: String::new(), // TODO
+                        event_key_hash: None, // TODO
                         authentication_succeeded: true,
-                        env: None,
+                        env: None, // TODO
                         extra: None,
                         framework: framework.to_string(),
                         function_count,
@@ -165,12 +165,12 @@ impl<T, E> Handler<T, E> {
                         has_signing_key_fallback,
                         mode: Kind::Cloud,
                         schema_version,
-                        sdk_language: String::new(),
-                        sdk_version: String::new(),
-                        serve_origin: None,
-                        serve_path: None,
-                        signing_key_fallback_hash: None,
-                        signing_key_hash: None,
+                        sdk_language: String::new(), // TODO
+                        sdk_version: String::new(), // TODO
+                        serve_origin: None, // TODO
+                        serve_path: None, // TODO
+                        signing_key_fallback_hash: None, // TODO
+                        signing_key_hash: None, // TODO
                     })),
 
                     Err(_) => Ok(IntrospectResult::Unauthenticated(

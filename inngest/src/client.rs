@@ -19,10 +19,10 @@ const API_ORIGIN: &str = "https://api.inngest.com";
 #[derive(Clone)]
 pub struct Inngest {
     id: String,
-    api_origin: Option<String>,
-    event_api_origin: Option<String>,
-    event_key: Option<String>,
-    env: Option<String>,
+    pub(crate) api_origin: Option<String>,
+    pub(crate) event_api_origin: Option<String>,
+    pub(crate) event_key: Option<String>,
+    pub(crate) env: Option<String>,
     dev: Option<String>,
     http: reqwest::Client,
 }
