@@ -1,6 +1,6 @@
 use crate::{
     basic_error,
-    handler::{Handler, RunQueryParams},
+    handler::{Handler, IntrospectResult, RunQueryParams},
     header::Headers,
     result::{Error, SdkResponse},
 };
@@ -12,13 +12,24 @@ use axum::{
 use serde::Deserialize;
 use std::{fmt::Debug, sync::Arc};
 
+const FRAMEWORK: &str = "axum";
+
+pub async fn introspect<T, E>(
+    hmap: HeaderMap,
+    State(handler): State<Arc<Handler<T, E>>>,
+    raw: String,
+) -> Result<IntrospectResult, Error> {
+    let headers = Headers::from(hmap);
+    handler.introspect(&headers, FRAMEWORK, &raw).await
+}
+
 pub async fn register<T, E>(
     hmap: HeaderMap,
     State(handler): State<Arc<Handler<T, E>>>,
 ) -> Result<(), String> {
     // convert the http headers into a generic hashmap
     let headers = Headers::from(hmap);
-    handler.sync(&headers, "axum").await
+    handler.sync(&headers, FRAMEWORK).await
 }
 
 pub async fn invoke<T, E>(
@@ -33,7 +44,7 @@ where
 {
     let headers = Headers::from(hmap);
     match serde_json::from_str(&raw) {
-        Ok(body) => handler.run(&headers, query, raw.as_str(), &body).await,
+        Ok(body) => handler.run(&headers, query, &raw, &body).await,
         Err(_err) => Err(basic_error!("failed to parse body as JSON")),
     }
 }

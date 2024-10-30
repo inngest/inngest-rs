@@ -11,7 +11,7 @@ use axum::{
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::header;
+use crate::{handler::IntrospectResult, header};
 
 #[derive(Serialize)]
 pub struct SdkResponse {
@@ -38,6 +38,22 @@ impl IntoResponse for SdkResponse {
             500 => (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(self.body)).into_response(),
             _ => (StatusCode::BAD_REQUEST, Json(json!("Unknown response"))).into_response(),
         }
+    }
+}
+
+impl IntoResponse for IntrospectResult {
+    fn into_response(self) -> axum::response::Response {
+        let mut headers = HeaderMap::new();
+        let sdk = format!("rust:{}", env!("CARGO_PKG_VERSION"));
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static("axum"));
+        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&sdk).unwrap());
+        headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
+
+        (StatusCode::OK, headers, Json(&self)).into_response()
     }
 }
 

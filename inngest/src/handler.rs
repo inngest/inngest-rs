@@ -98,13 +98,111 @@ impl<T, E> Handler<T, E> {
         "/api/inngest".to_string()
     }
 
-    pub async fn introspect(&self, headers: &Headers) -> Result<(), String> {
-        Ok(())
+    fn verify_signature(&self, sig: &str, raw_body: &str) -> Result<(), Error> {
+        let Some(key) = self.signing_key.clone() else {
+            return Err(basic_error!(
+                "no signing key available for verifying request signature"
+            ));
+        };
+
+        let signature = Signature::new(&key).sig(&sig).body(raw_body);
+        signature.verify(false)
     }
 
-    pub async fn sync(&self, headers: &Headers, framework: &str) -> Result<(), String> {
-        let kind = headers.server_kind();
+    pub async fn introspect(
+        &self,
+        headers: &Headers,
+        framework: &str,
+        raw_body: &str,
+    ) -> Result<IntrospectResult, Error> {
+        let payload = self.sync_payload(headers, framework);
+        let function_count = payload.functions.len() as u32;
+        let has_event_key = self.has_event_key();
+        let has_signing_key = self.has_signing_key();
+        let has_signing_key_fallback = self.has_signing_key_fallback();
+        let schema_version = PROBE_SCHEMA_VERSION.to_string();
 
+        match headers.server_kind() {
+            Kind::Dev => Ok(IntrospectResult::Unauthenticated(
+                IntrospectUnauthedResult {
+                    authentication_succeeded: None,
+                    extra: None,
+                    function_count,
+                    has_event_key,
+                    has_signing_key,
+                    has_signing_key_fallback,
+                    mode: Kind::Dev,
+                    schema_version,
+                },
+            )),
+            Kind::Cloud => match headers.signature() {
+                None => Ok(IntrospectResult::Unauthenticated(
+                    IntrospectUnauthedResult {
+                        authentication_succeeded: None,
+                        extra: None,
+                        function_count,
+                        has_event_key,
+                        has_signing_key,
+                        has_signing_key_fallback,
+                        mode: Kind::Cloud,
+                        schema_version,
+                    },
+                )),
+
+                Some(sig) => match self.verify_signature(&sig, raw_body) {
+                    Ok(_) => Ok(IntrospectResult::Authenticated(IntrospectAuthedResult {
+                        app_id: self.inngest.app_id(),
+                        api_origin: String::new(),
+                        event_api_origin: String::new(),
+                        event_key_hash: None,
+                        authentication_succeeded: true,
+                        env: None,
+                        extra: None,
+                        framework: framework.to_string(),
+                        function_count,
+                        has_event_key,
+                        has_signing_key,
+                        has_signing_key_fallback,
+                        mode: Kind::Cloud,
+                        schema_version,
+                        sdk_language: String::new(),
+                        sdk_version: String::new(),
+                        serve_origin: None,
+                        serve_path: None,
+                        signing_key_fallback_hash: None,
+                        signing_key_hash: None,
+                    })),
+
+                    Err(_) => Ok(IntrospectResult::Unauthenticated(
+                        IntrospectUnauthedResult {
+                            authentication_succeeded: Some(false),
+                            extra: None,
+                            function_count,
+                            has_event_key,
+                            has_signing_key,
+                            has_signing_key_fallback,
+                            mode: Kind::Cloud,
+                            schema_version,
+                        },
+                    )),
+                },
+            },
+        }
+    }
+
+    fn has_event_key(&self) -> bool {
+        false
+    }
+
+    fn has_signing_key(&self) -> bool {
+        self.signing_key.is_some()
+    }
+
+    fn has_signing_key_fallback(&self) -> bool {
+        false
+    }
+
+    fn sync_payload(&self, headers: &Headers, framework: &str) -> Request {
         let app_id = self.inngest.app_id();
         let functions: Vec<Function> = self
             .funcs
@@ -112,7 +210,7 @@ impl<T, E> Handler<T, E> {
             .map(|(_, f)| f.function(&self.app_serve_origin(headers), &self.app_serve_path()))
             .collect();
 
-        let req = Request {
+        Request {
             app_name: app_id.clone(),
             framework: framework.to_string(),
             functions,
@@ -122,7 +220,12 @@ impl<T, E> Handler<T, E> {
                 self.app_serve_path()
             ),
             ..Default::default()
-        };
+        }
+    }
+
+    pub async fn sync(&self, headers: &Headers, framework: &str) -> Result<(), String> {
+        let kind = headers.server_kind();
+        let req = self.sync_payload(headers, framework);
 
         let mut req = reqwest::Client::new()
             .post(format!(
@@ -168,14 +271,7 @@ impl<T, E> Handler<T, E> {
 
         // Verify the signature if provided
         if let Some(sig) = sig.clone() {
-            let Some(key) = self.signing_key.clone() else {
-                return Err(basic_error!(
-                    "no signing key available for verifying request signature"
-                ));
-            };
-
-            let signature = Signature::new(&key).sig(&sig).body(raw_body);
-            _ = signature.verify(false)?;
+            _ = self.verify_signature(&sig, raw_body)?;
         }
 
         let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
@@ -309,11 +405,13 @@ pub enum Kind {
     Cloud,
 }
 
+const PROBE_SCHEMA_VERSION: &str = "2024-05-24";
+
 #[derive(Serialize)]
 #[serde(untagged)]
 pub enum IntrospectResult {
     Unauthenticated(IntrospectUnauthedResult),
-    Authenticated(IntrospecAuthedResult),
+    Authenticated(IntrospectAuthedResult),
 }
 
 #[derive(Serialize)]
@@ -329,7 +427,7 @@ pub struct IntrospectUnauthedResult {
 }
 
 #[derive(Serialize)]
-pub struct IntrospecAuthedResult {
+pub struct IntrospectAuthedResult {
     app_id: String,
     api_origin: String,
     event_api_origin: String,

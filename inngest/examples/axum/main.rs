@@ -1,5 +1,5 @@
 use axum::{
-    routing::{get, put},
+    routing::get,
     Router,
 };
 use inngest::{
@@ -36,7 +36,7 @@ async fn main() {
         .route("/", get(|| async { "OK!\n" }))
         .route(
             "/api/inngest",
-            put(serve::axum::register).post(serve::axum::invoke),
+            get(serve::axum::introspect).put(serve::axum::register).post(serve::axum::invoke),
         )
         .with_state(inngest_state);
 
