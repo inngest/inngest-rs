@@ -14,10 +14,12 @@ use inngest::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{sync::Arc, time::Duration};
+use std::{env, sync::Arc, time::Duration};
 
 #[tokio::main]
 async fn main() {
+    dotenv::dotenv().ok();
+
     let client = Inngest::new("rust-dev");
     let mut inngest_handler = Handler::new(&client);
     inngest_handler.register_fns(vec![
@@ -38,7 +40,14 @@ async fn main() {
         )
         .with_state(inngest_state);
 
-    let addr = "[::]:3000".parse::<std::net::SocketAddr>().unwrap();
+    let port = match env::var("PORT") {
+        Ok(p) => p,
+        Err(_) => "3000".to_string(),
+    };
+
+    let addr = format!("[::]:{}", port)
+        .parse::<std::net::SocketAddr>()
+        .unwrap();
 
     // run it with hyper on localhost:3000
     axum::Server::bind(&addr)

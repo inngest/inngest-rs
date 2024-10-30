@@ -313,7 +313,7 @@ pub enum Kind {
 #[serde(untagged)]
 pub enum IntrospectResult {
     Unauthenticated(IntrospectUnauthedResult),
-    Authenticated(IntrospecAuthedResult)
+    Authenticated(IntrospecAuthedResult),
 }
 
 #[derive(Serialize)]
@@ -325,7 +325,7 @@ pub struct IntrospectUnauthedResult {
     has_signing_key: bool,
     has_signing_key_fallback: bool,
     mode: Kind,
-    schema_version: String
+    schema_version: String,
 }
 
 #[derive(Serialize)]
