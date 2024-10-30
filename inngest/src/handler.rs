@@ -152,9 +152,9 @@ impl<T, E> Handler<T, E> {
                 Some(sig) => match self.verify_signature(&sig, raw_body) {
                     Ok(_) => Ok(IntrospectResult::Authenticated(IntrospectAuthedResult {
                         app_id: self.inngest.app_id(),
-                        api_origin: String::new(), // TODO
+                        api_origin: String::new(),       // TODO
                         event_api_origin: String::new(), // TODO
-                        event_key_hash: None, // TODO
+                        event_key_hash: None,            // TODO
                         authentication_succeeded: true,
                         env: None, // TODO
                         extra: None,
@@ -165,12 +165,12 @@ impl<T, E> Handler<T, E> {
                         has_signing_key_fallback,
                         mode: Kind::Cloud,
                         schema_version,
-                        sdk_language: String::new(), // TODO
-                        sdk_version: String::new(), // TODO
-                        serve_origin: None, // TODO
-                        serve_path: None, // TODO
+                        sdk_language: String::new(),     // TODO
+                        sdk_version: String::new(),      // TODO
+                        serve_origin: None,              // TODO
+                        serve_path: None,                // TODO
                         signing_key_fallback_hash: None, // TODO
-                        signing_key_hash: None, // TODO
+                        signing_key_hash: None,          // TODO
                     })),
 
                     Err(_) => Ok(IntrospectResult::Unauthenticated(
@@ -400,7 +400,7 @@ struct RunRequestCtxStack {
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum Kind {
     Dev,
     Cloud,
