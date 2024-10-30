@@ -165,8 +165,8 @@ impl<T, E> Handler<T, E> {
                         has_signing_key_fallback,
                         mode: Kind::Cloud,
                         schema_version,
-                        sdk_language: String::new(),     // TODO
-                        sdk_version: String::new(),      // TODO
+                        sdk_language: "rust".to_string(),
+                        sdk_version: env!("CARGO_PKG_VERSION").to_string(),
                         serve_origin: None,              // TODO
                         serve_path: None,                // TODO
                         signing_key_fallback_hash: None, // TODO
