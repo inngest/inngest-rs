@@ -400,6 +400,7 @@ struct RunRequestCtxStack {
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all="lowercase")]
 pub enum Kind {
     Dev,
     Cloud,
