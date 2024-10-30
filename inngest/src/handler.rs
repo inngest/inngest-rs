@@ -191,7 +191,7 @@ impl<T, E> Handler<T, E> {
     }
 
     fn has_event_key(&self) -> bool {
-        false
+        self.inngest.event_key.is_some()
     }
 
     fn has_signing_key(&self) -> bool {
