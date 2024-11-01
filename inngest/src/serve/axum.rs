@@ -7,9 +7,9 @@ use crate::{
 
 use axum::{
     extract::{Query, State},
-    response::IntoResponse,
     http::{HeaderMap, HeaderValue, StatusCode},
-    Json
+    response::IntoResponse,
+    Json,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -52,7 +52,6 @@ where
         Err(_err) => Err(basic_error!("failed to parse body as JSON")),
     }
 }
-
 
 // Response conversion
 impl IntoResponse for SdkResponse {
