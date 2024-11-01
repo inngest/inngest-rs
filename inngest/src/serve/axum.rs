@@ -2,7 +2,8 @@ use crate::{
     basic_error,
     handler::{Handler, IntrospectResult, RunQueryParams, SyncQueryParams, SyncResponse},
     header::{self, Headers},
-    result::{Error, SdkResponse}, version,
+    result::{Error, SdkResponse},
+    version,
 };
 
 use axum::{
@@ -61,8 +62,14 @@ impl IntoResponse for SdkResponse {
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static(&FRAMEWORK));
-        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&version::sdk()).unwrap());
+        headers.insert(
+            header::INNGEST_FRAMEWORK,
+            HeaderValue::from_static(&FRAMEWORK),
+        );
+        headers.insert(
+            header::INNGEST_SDK,
+            HeaderValue::from_str(&version::sdk()).unwrap(),
+        );
         headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
 
         match self.status {
@@ -82,8 +89,14 @@ impl IntoResponse for SyncResponse {
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static(&FRAMEWORK));
-        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&version::sdk()).unwrap());
+        headers.insert(
+            header::INNGEST_FRAMEWORK,
+            HeaderValue::from_static(&FRAMEWORK),
+        );
+        headers.insert(
+            header::INNGEST_SDK,
+            HeaderValue::from_str(&version::sdk()).unwrap(),
+        );
         headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
 
         (StatusCode::OK, headers, Json(&self)).into_response()
@@ -97,8 +110,14 @@ impl IntoResponse for IntrospectResult {
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static(&FRAMEWORK));
-        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&version::sdk()).unwrap());
+        headers.insert(
+            header::INNGEST_FRAMEWORK,
+            HeaderValue::from_static(&FRAMEWORK),
+        );
+        headers.insert(
+            header::INNGEST_SDK,
+            HeaderValue::from_str(&version::sdk()).unwrap(),
+        );
         headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
 
         (StatusCode::OK, headers, Json(&self)).into_response()
