@@ -263,19 +263,15 @@ impl<T, E> Handler<T, E> {
         headers: &Headers,
         query: &SyncQueryParams,
         framework: &str,
-    ) -> Result<(), String> {
-        println!("HEADERS: {:#?}", headers);
-        println!("QUERY: {:#?}", query);
-
+    ) -> Result<SyncResponse, String> {
         let kind = headers.server_kind();
         let req = self.sync_payload(headers, framework);
-        // println!("REQUEST: {:#?}", req);
-
-        let api_origin = self.inngest.inngest_api_origin(kind);
-        println!("API ORIGIN: {}", api_origin);
 
         let mut sync_req = reqwest::Client::new()
-            .post(format!("{}/fn/register", api_origin))
+            .post(format!(
+                "{}/fn/register",
+                self.inngest.inngest_api_origin(kind)
+            ))
             .json(&req);
 
         if let Some(key) = &self.signing_key {
@@ -290,15 +286,27 @@ impl<T, E> Handler<T, E> {
             }
         }
 
-        println!("REQUEST: {:#?}", sync_req);
+        if let Some(deploy_id) = query.deploy_id.clone() {
+            sync_req = sync_req.query(&[("deployId", &deploy_id)]);
+        }
 
         match sync_req.send().await {
-            Ok(resp) => {
-                println!("RESP: {:#?}", resp);
-                println!("BODY: {:#?}", resp.text().await);
+            Ok(resp) => match resp.json::<InngestSyncSuccess>().await {
+                Ok(res) => {
+                    let modified = match res.modified.clone() {
+                        None => false,
+                        Some(v) => v,
+                    };
 
-                Ok(())
-            }
+                    Ok(SyncResponse::OutOfBand(OutOfBandSyncResponse {
+                        message: "Successfully synced.".to_string(),
+                        modified,
+                    }))
+                }
+                Err(_) => {
+                    return Err("error parsing sync response".to_string());
+                }
+            },
             Err(err) => {
                 println!("ERROR: {:?}", err);
 
@@ -504,4 +512,39 @@ pub struct IntrospectAuthedResult {
     serve_path: Option<String>,
     signing_key_fallback_hash: Option<String>,
     signing_key_hash: Option<String>,
+}
+
+#[derive(Serialize)]
+pub enum SyncResponse {
+    InBand(InBandSyncResponse),
+    OutOfBand(OutOfBandSyncResponse),
+}
+
+#[derive(Serialize)]
+pub struct InBandSyncResponse {
+    app_id: String,
+    framework: String,
+    functions: Vec<Function>,
+    inspection: IntrospectAuthedResult,
+    sdk_author: String,
+    sdk_language: String,
+    sdk_version: String,
+    url: String,
+}
+
+#[derive(Serialize)]
+pub struct OutOfBandSyncResponse {
+    message: String,
+    modified: bool,
+}
+
+#[derive(Deserialize)]
+pub struct InngestSyncError {
+    error: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct InngestSyncSuccess {
+    ok: bool,
+    modified: Option<bool>,
 }
