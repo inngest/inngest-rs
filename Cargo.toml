@@ -2,3 +2,4 @@
 members = [
   "inngest"
 ]
+resolver = "2"
