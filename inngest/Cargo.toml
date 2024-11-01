@@ -1,11 +1,13 @@
 [package]
 name = "inngest"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Inngest Engineering <eng@inngest.com>"]
 edition = "2021"
 description = "Inngest Rusk SDK"
 license-file = "LICENSE"
-readme = "README.md"
+readme = "../README.md"
+homepage = "https://github.com/inngest/inngest-rs"
+repository = "https://github.com/inngest/inngest-rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
