@@ -16,6 +16,7 @@ configMapGenerator:
 
       - INNGEST_SIGNING_KEY=REPLACE_SIGNING_KEY
       - INNGEST_EVENT_KEY=REPLACE_EVENT_KEY
+      - INNGEST_MODE=cloud
 
 resources:
   - namespace.yaml
