@@ -1,6 +1,6 @@
 [package]
 name = "inngest"
-version = "0.0.1"
+version = "0.1.0"
 authors = ["Inngest Engineering <eng@inngest.com>"]
 edition = "2021"
 description = "Inngest Rusk SDK"
