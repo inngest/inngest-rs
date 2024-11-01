@@ -1,6 +1,6 @@
 use crate::{
     basic_error,
-    handler::{Handler, IntrospectResult, RunQueryParams},
+    handler::{Handler, IntrospectResult, RunQueryParams, SyncQueryParams},
     header::Headers,
     result::{Error, SdkResponse},
 };
@@ -25,11 +25,12 @@ pub async fn introspect<T, E>(
 
 pub async fn register<T, E>(
     hmap: HeaderMap,
+    Query(query): Query<SyncQueryParams>,
     State(handler): State<Arc<Handler<T, E>>>,
 ) -> Result<(), String> {
     // convert the http headers into a generic hashmap
     let headers = Headers::from(hmap);
-    handler.sync(&headers, FRAMEWORK).await
+    handler.sync(&headers, &query, FRAMEWORK).await
 }
 
 pub async fn invoke<T, E>(
@@ -44,7 +45,7 @@ where
 {
     let headers = Headers::from(hmap);
     match serde_json::from_str(&raw) {
-        Ok(body) => handler.run(&headers, query, &raw, &body).await,
+        Ok(body) => handler.run(&headers, &query, &raw, &body).await,
         Err(_err) => Err(basic_error!("failed to parse body as JSON")),
     }
 }

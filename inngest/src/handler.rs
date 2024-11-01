@@ -3,10 +3,12 @@ use std::{collections::HashMap, fmt::Debug, panic::AssertUnwindSafe};
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha1::Digest;
+use sha2::Sha256;
 
 use crate::{
     basic_error,
-    client::Inngest,
+    client::{self, Inngest},
     config::Config,
     event::Event,
     function::{Function, Input, InputCtx, ServableFn},
@@ -24,6 +26,7 @@ pub struct Handler<T: 'static, E> {
     serve_origin: Option<String>,
     serve_path: Option<String>,
     funcs: HashMap<String, ServableFn<T, E>>,
+    mode: Kind,
 }
 
 #[derive(Deserialize)]
@@ -32,11 +35,18 @@ pub struct RunQueryParams {
     fn_id: String,
 }
 
+#[derive(Deserialize, Debug)]
+pub struct SyncQueryParams {
+    #[serde(rename = "deployId")]
+    deploy_id: Option<String>,
+}
+
 impl<T, E> Handler<T, E> {
     pub fn new(client: &Inngest) -> Self {
         let signing_key = Config::signing_key();
         let serve_origin = Config::serve_origin();
         let serve_path = Config::serve_path();
+        let mode = Config::mode();
 
         Handler {
             signing_key,
@@ -44,6 +54,7 @@ impl<T, E> Handler<T, E> {
             serve_path,
             inngest: client.clone(),
             funcs: HashMap::new(),
+            mode,
         }
     }
 
@@ -122,10 +133,12 @@ impl<T, E> Handler<T, E> {
         let has_signing_key_fallback = self.has_signing_key_fallback();
         let schema_version = PROBE_SCHEMA_VERSION.to_string();
 
-        match headers.server_kind() {
+        let mut authentication_succeeded: Option<bool> = None;
+
+        match self.mode {
             Kind::Dev => Ok(IntrospectResult::Unauthenticated(
                 IntrospectUnauthedResult {
-                    authentication_succeeded: None,
+                    authentication_succeeded,
                     extra: None,
                     function_count,
                     has_event_key,
@@ -135,10 +148,60 @@ impl<T, E> Handler<T, E> {
                     schema_version,
                 },
             )),
-            Kind::Cloud => match headers.signature() {
-                None => Ok(IntrospectResult::Unauthenticated(
+
+            Kind::Cloud => {
+                if let Some(sig) = headers.signature() {
+                    if let Ok(_) = self.verify_signature(&sig, raw_body) {
+                        let api_origin = match self.inngest.api_origin.clone() {
+                            Some(origin) => origin,
+                            None => client::API_ORIGIN.to_string(),
+                        };
+
+                        let event_api_origin = match self.inngest.event_api_origin.clone() {
+                            Some(origin) => origin,
+                            None => client::EVENT_API_ORIGIN.to_string(),
+                        };
+
+                        let event_key_hash = self.hash_key(self.inngest.event_key.clone());
+                        let signing_key_hash = if let Some(key) = self.signing_key.clone() {
+                            match Signature::new(&key).hash() {
+                                Ok(hash) => Some(hash),
+                                Err(_) => None,
+                            }
+                        } else {
+                            None
+                        };
+
+                        return Ok(IntrospectResult::Authenticated(IntrospectAuthedResult {
+                            app_id: self.inngest.app_id(),
+                            api_origin,
+                            event_api_origin,
+                            event_key_hash,
+                            authentication_succeeded: true,
+                            env: None, // TODO
+                            extra: None,
+                            framework: framework.to_string(),
+                            function_count,
+                            has_event_key,
+                            has_signing_key,
+                            has_signing_key_fallback,
+                            mode: Kind::Cloud,
+                            schema_version,
+                            sdk_language: "rust".to_string(),
+                            sdk_version: env!("CARGO_PKG_VERSION").to_string(),
+                            serve_origin: self.serve_origin.clone(),
+                            serve_path: self.serve_path.clone(),
+                            signing_key_hash,
+                            signing_key_fallback_hash: None, // TODO
+                        }));
+                    };
+                    // mark it as false
+                    authentication_succeeded = Some(false);
+                }
+
+                Ok(IntrospectResult::Unauthenticated(
                     IntrospectUnauthedResult {
-                        authentication_succeeded: None,
+                        authentication_succeeded,
                         extra: None,
                         function_count,
                         has_event_key,
@@ -147,46 +210,8 @@ impl<T, E> Handler<T, E> {
                         mode: Kind::Cloud,
                         schema_version,
                     },
-                )),
-
-                Some(sig) => match self.verify_signature(&sig, raw_body) {
-                    Ok(_) => Ok(IntrospectResult::Authenticated(IntrospectAuthedResult {
-                        app_id: self.inngest.app_id(),
-                        api_origin: String::new(),       // TODO
-                        event_api_origin: String::new(), // TODO
-                        event_key_hash: None,            // TODO
-                        authentication_succeeded: true,
-                        env: None, // TODO
-                        extra: None,
-                        framework: framework.to_string(),
-                        function_count,
-                        has_event_key,
-                        has_signing_key,
-                        has_signing_key_fallback,
-                        mode: Kind::Cloud,
-                        schema_version,
-                        sdk_language: "rust".to_string(),
-                        sdk_version: env!("CARGO_PKG_VERSION").to_string(),
-                        serve_origin: None,              // TODO
-                        serve_path: None,                // TODO
-                        signing_key_fallback_hash: None, // TODO
-                        signing_key_hash: None,          // TODO
-                    })),
-
-                    Err(_) => Ok(IntrospectResult::Unauthenticated(
-                        IntrospectUnauthedResult {
-                            authentication_succeeded: Some(false),
-                            extra: None,
-                            function_count,
-                            has_event_key,
-                            has_signing_key,
-                            has_signing_key_fallback,
-                            mode: Kind::Cloud,
-                            schema_version,
-                        },
-                    )),
-                },
-            },
+                ))
+            }
         }
     }
 
@@ -200,6 +225,16 @@ impl<T, E> Handler<T, E> {
 
     fn has_signing_key_fallback(&self) -> bool {
         false
+    }
+
+    fn hash_key(&self, key: Option<String>) -> Option<String> {
+        key.map(|key| {
+            let mut hasher = Sha256::new();
+            hasher.update(key.as_bytes());
+
+            let sum = hasher.finalize();
+            base16::encode_lower(&sum)
+        })
     }
 
     fn sync_payload(&self, headers: &Headers, framework: &str) -> Request {
@@ -223,22 +258,31 @@ impl<T, E> Handler<T, E> {
         }
     }
 
-    pub async fn sync(&self, headers: &Headers, framework: &str) -> Result<(), String> {
+    pub async fn sync(
+        &self,
+        headers: &Headers,
+        query: &SyncQueryParams,
+        framework: &str,
+    ) -> Result<(), String> {
+        println!("HEADERS: {:#?}", headers);
+        println!("QUERY: {:#?}", query);
+
         let kind = headers.server_kind();
         let req = self.sync_payload(headers, framework);
+        // println!("REQUEST: {:#?}", req);
 
-        let mut req = reqwest::Client::new()
-            .post(format!(
-                "{}/fn/register",
-                self.inngest.inngest_api_origin(kind)
-            ))
+        let api_origin = self.inngest.inngest_api_origin(kind);
+        println!("API ORIGIN: {}", api_origin);
+
+        let mut sync_req = reqwest::Client::new()
+            .post(format!("{}/fn/register", api_origin))
             .json(&req);
 
         if let Some(key) = &self.signing_key {
             let sig = Signature::new(&key);
             match sig.hash() {
                 Ok(hashed) => {
-                    req = req.header("authorization", format!("Bearer {}", hashed));
+                    sync_req = sync_req.header("authorization", format!("Bearer {}", hashed));
                 }
                 Err(_err) => {
                     return Err("error hashing signing key".to_string());
@@ -246,16 +290,27 @@ impl<T, E> Handler<T, E> {
             }
         }
 
-        req.send()
-            .await
-            .map(|_| ())
-            .map_err(|_err| "error registering".to_string())
+        println!("REQUEST: {:#?}", sync_req);
+
+        match sync_req.send().await {
+            Ok(resp) => {
+                println!("RESP: {:#?}", resp);
+                println!("BODY: {:#?}", resp.text().await);
+
+                Ok(())
+            }
+            Err(err) => {
+                println!("ERROR: {:?}", err);
+
+                Err("error registering".to_string())
+            }
+        }
     }
 
     pub async fn run(
         &self,
         headers: &Headers,
-        query: RunQueryParams,
+        query: &RunQueryParams,
         raw_body: &str,
         body: &Value,
     ) -> Result<SdkResponse, Error>

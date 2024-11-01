@@ -13,8 +13,8 @@ use crate::{
 };
 
 const API_ORIGIN_DEV: &str = "http://127.0.0.1:8288";
-const EVENT_API_ORIGIN: &str = "https://inn.gs";
-const API_ORIGIN: &str = "https://api.inngest.com";
+pub(crate) const EVENT_API_ORIGIN: &str = "https://inn.gs";
+pub(crate) const API_ORIGIN: &str = "https://api.inngest.com";
 
 #[derive(Clone)]
 pub struct Inngest {
