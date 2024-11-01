@@ -27,4 +27,6 @@ base16 = "0.2"
 url = "2.5"
 sha2 = "0.10"
 hmac = "0.12"
+
+[dev-dependencies]
 dotenv = "0.15.0"
