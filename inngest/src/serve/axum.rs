@@ -2,7 +2,7 @@ use crate::{
     basic_error,
     handler::{Handler, IntrospectResult, RunQueryParams, SyncQueryParams, SyncResponse},
     header::{self, Headers},
-    result::{Error, SdkResponse},
+    result::{Error, SdkResponse}, version,
 };
 
 use axum::{
@@ -57,13 +57,12 @@ where
 impl IntoResponse for SdkResponse {
     fn into_response(self) -> axum::response::Response {
         let mut headers = HeaderMap::new();
-        let sdk = format!("rust:{}", env!("CARGO_PKG_VERSION"));
         headers.insert(
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static("axum"));
-        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&sdk).unwrap());
+        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static(&FRAMEWORK));
+        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&version::sdk()).unwrap());
         headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
 
         match self.status {
@@ -79,13 +78,12 @@ impl IntoResponse for SdkResponse {
 impl IntoResponse for SyncResponse {
     fn into_response(self) -> axum::response::Response {
         let mut headers = HeaderMap::new();
-        let sdk = format!("rust:{}", env!("CARGO_PKG_VERSION"));
         headers.insert(
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static("axum"));
-        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&sdk).unwrap());
+        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static(&FRAMEWORK));
+        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&version::sdk()).unwrap());
         headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
 
         (StatusCode::OK, headers, Json(&self)).into_response()
@@ -95,13 +93,12 @@ impl IntoResponse for SyncResponse {
 impl IntoResponse for IntrospectResult {
     fn into_response(self) -> axum::response::Response {
         let mut headers = HeaderMap::new();
-        let sdk = format!("rust:{}", env!("CARGO_PKG_VERSION"));
         headers.insert(
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
-        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static("axum"));
-        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&sdk).unwrap());
+        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static(&FRAMEWORK));
+        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&version::sdk()).unwrap());
         headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
 
         (StatusCode::OK, headers, Json(&self)).into_response()
