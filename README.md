@@ -18,7 +18,7 @@
 </div>
 <hr />
 
-# Inngest Rust SDK
+# Inngest Rust SDK - Alpha
 
 Inngest's SDK adds durable functions to Rust in a few lines of code. Using this SDK, you can write background jobs, and workflows
 as step functions without the need to setup queueing infrastructure.
