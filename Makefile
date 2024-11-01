@@ -18,8 +18,8 @@ fmt:
 changelog:
 	git cliff -o CHANGELOG.md
 
-.PHONY: bump
-bump:
+.PHONY: bump-version
+bump-version:
 	git cliff --bump -o CHANGELOG.md
 
 .PHONY: inngest-dev
