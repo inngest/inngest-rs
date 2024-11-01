@@ -49,7 +49,6 @@ mod state {
 
     /// Keep this private so that we can hide the mutex and prevent deadlocks
     struct InnerState {
-        app_id: String,
         state: HashMap<String, Option<Value>>,
         indices: HashMap<String, u64>,
         genop: Vec<GeneratorOpCode>,
@@ -73,10 +72,9 @@ mod state {
     }
 
     impl State {
-        pub fn new(app_id: impl Into<String>, state: &HashMap<String, Option<Value>>) -> Self {
+        pub fn new(state: &HashMap<String, Option<Value>>) -> Self {
             State {
                 inner: Arc::new(RwLock::new(InnerState {
-                    app_id: app_id.into(),
                     state: state.clone(),
                     indices: HashMap::new(),
                     genop: Vec::new(),
@@ -135,9 +133,9 @@ impl<E> UserProvidedError<'_> for E where
 }
 
 impl Step {
-    pub fn new(app_id: impl Into<String>, state: &HashMap<String, Option<Value>>) -> Self {
+    pub fn new(state: &HashMap<String, Option<Value>>) -> Self {
         Step {
-            state: State::new(app_id, state),
+            state: State::new(state),
         }
     }
 

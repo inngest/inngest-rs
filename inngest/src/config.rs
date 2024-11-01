@@ -1,5 +1,7 @@
 use std::env;
 
+use crate::handler::Kind;
+
 // client side
 const INNGEST_API_ORIGIN: &str = "INNGEST_API_ORIGIN";
 const INNGEST_EVENT_API_ORIGIN: &str = "INNGEST_EVENT_API_ORIGIN";
@@ -11,6 +13,9 @@ const INNGEST_DEV: &str = "INNGEST_DEV";
 const INNGEST_SIGNING_KEY: &str = "INNGEST_SIGNING_KEY";
 const INNGEST_SERVE_ORIGIN: &str = "INNGEST_SERVE_ORIGIN";
 const INNGEST_SERVE_PATH: &str = "INNGEST_SERVE_PATH";
+
+// optional
+const INNGEST_MODE: &str = "INNGEST_MODE";
 
 pub(crate) struct Config {}
 
@@ -47,6 +52,16 @@ impl Config {
         Self::read_env_str(INNGEST_SERVE_PATH)
     }
 
+    pub fn mode() -> Kind {
+        match Self::read_env_str(INNGEST_MODE) {
+            None => Kind::Dev,
+            Some(v) => match v.to_lowercase().as_str() {
+                "cloud" => Kind::Cloud,
+                _ => Kind::Dev,
+            },
+        }
+    }
+
     // helper methods
     fn read_env_str(key: &str) -> Option<String> {
         match env::var(key) {
@@ -59,19 +74,5 @@ impl Config {
                 None
             }
         }
-    }
-
-    fn read_env_bool(key: &str) -> Option<bool> {
-        if let Some(v) = Self::read_env_str(key) {
-            return match v.parse::<bool>() {
-                Ok(b) => Some(b),
-                Err(err) => {
-                    println!("Error parsing variable '{}' as bool: {:?}", key, err);
-                    None
-                }
-            };
-        }
-
-        None
     }
 }

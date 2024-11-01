@@ -6,7 +6,7 @@ use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use slug::slugify;
-use std::{collections::HashMap, fmt::Debug, future::Future};
+use std::{collections::HashMap, fmt::Debug};
 
 // NOTE: should T have Copy trait too?
 // so it can do something like `input.event` without moving.
@@ -26,15 +26,15 @@ pub struct InputCtx {
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionOps {
+pub struct FunctionOpts {
     pub id: String,
     pub name: Option<String>,
     pub retries: u8,
 }
 
-impl Default for FunctionOps {
+impl Default for FunctionOpts {
     fn default() -> Self {
-        FunctionOps {
+        FunctionOpts {
             id: String::new(),
             name: None,
             retries: 3,
@@ -42,11 +42,26 @@ impl Default for FunctionOps {
     }
 }
 
+impl FunctionOpts {
+    pub fn new(id: &str) -> Self {
+        FunctionOpts {
+            id: id.to_string(),
+            ..Default::default()
+        }
+    }
+
+    pub fn name(mut self, name: &str) -> Self {
+        self.name = Some(name.to_string());
+        self
+    }
+}
+
 type Func<T, E> =
     dyn Fn(Input<T>, StepTool) -> BoxFuture<'static, Result<Value, E>> + Send + Sync + 'static;
 
 pub struct ServableFn<T: 'static, E> {
-    pub opts: FunctionOps,
+    pub(crate) app_id: String,
+    pub opts: FunctionOpts,
     pub trigger: Trigger,
     pub func: Box<Func<T, E>>,
 }
@@ -62,13 +77,50 @@ impl<T: InngestEvent, E> Debug for ServableFn<T, E> {
 
 impl<T, E> ServableFn<T, E> {
     // TODO: prepend app_id
-    // TODO: slugify id
     pub fn slug(&self) -> String {
-        slugify(self.opts.id.clone())
+        format!("{}-{}", &self.app_id, slugify(self.opts.id.clone()))
+    }
+
+    pub fn name(&self) -> String {
+        match self.opts.name.clone() {
+            Some(name) => name,
+            None => self.slug(),
+        }
     }
 
     pub fn trigger(&self) -> Trigger {
         self.trigger.clone()
+    }
+
+    pub fn function(&self, serve_origin: &str, serve_path: &str) -> Function {
+        let id = format!("{}-{}", &self.app_id, slugify(self.opts.id.clone()));
+        let name = match self.opts.name.clone() {
+            Some(name) => name,
+            None => id.clone(),
+        };
+
+        let mut steps = HashMap::new();
+        steps.insert(
+            "step".to_string(),
+            Step {
+                id: "step".to_string(),
+                name: "step".to_string(),
+                runtime: StepRuntime {
+                    url: format!("{}{}?fnId={}&step=step", serve_origin, serve_path, &id),
+                    method: "http".to_string(),
+                },
+                retries: StepRetry {
+                    attempts: self.opts.retries,
+                },
+            },
+        );
+
+        Function {
+            id,
+            name,
+            triggers: vec![self.trigger.clone()],
+            steps,
+        }
     }
 }
 
@@ -112,19 +164,28 @@ pub enum Trigger {
     },
 }
 
-pub fn create_function<T: 'static, E, F>(
-    opts: FunctionOps,
-    trigger: Trigger,
-    func: impl Fn(Input<T>, StepTool) -> F + Send + Sync + 'static,
-) -> ServableFn<T, E>
-where
-    F: Future<Output = Result<Value, E>> + Send + Sync + 'static,
-{
-    use futures::future::FutureExt;
+impl Trigger {
+    pub fn event(name: &str) -> Self {
+        Trigger::EventTrigger {
+            event: name.to_string(),
+            expression: None,
+        }
+    }
 
-    ServableFn {
-        opts,
-        trigger,
-        func: Box::new(move |input, step| func(input, step).boxed()),
+    #[allow(unused_variables)]
+    pub fn expr(&self, exp: &str) -> Self {
+        match self {
+            Trigger::EventTrigger { event, expression } => Trigger::EventTrigger {
+                event: event.clone(),
+                expression: Some(exp.to_string()),
+            },
+            Trigger::CronTrigger { cron } => Trigger::CronTrigger { cron: cron.clone() },
+        }
+    }
+
+    pub fn cron(cron: &str) -> Self {
+        Trigger::CronTrigger {
+            cron: cron.to_string(),
+        }
     }
 }

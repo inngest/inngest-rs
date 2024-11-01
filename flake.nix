@@ -23,6 +23,9 @@
             cargo
             clippy
 
+            # tools
+            git-cliff
+
             # deps
             pkg-config
             openssl

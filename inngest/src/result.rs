@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    time::Duration,
+};
 
 use axum::{
     http::{HeaderMap, HeaderValue, StatusCode},
@@ -14,28 +17,6 @@ use crate::header;
 pub struct SdkResponse {
     pub status: u16,
     pub body: Value,
-}
-
-impl IntoResponse for SdkResponse {
-    fn into_response(self) -> axum::response::Response {
-        let mut headers = HeaderMap::new();
-        let sdk = format!("rust:{}", env!("CARGO_PKG_VERSION"));
-        headers.insert(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/json"),
-        );
-        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static("axum"));
-        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&sdk).unwrap());
-        headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
-
-        match self.status {
-            200 => (StatusCode::OK, headers, Json(self.body)).into_response(),
-            206 => (StatusCode::PARTIAL_CONTENT, headers, Json(self.body)).into_response(),
-            400 => (StatusCode::BAD_REQUEST, headers, Json(self.body)).into_response(),
-            500 => (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(self.body)).into_response(),
-            _ => (StatusCode::BAD_REQUEST, Json(json!("Unknown response"))).into_response(),
-        }
-    }
 }
 
 /// Error type that the user (developer) is supposed to interact with
@@ -142,24 +123,53 @@ impl Drop for FlowControlError {
 
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
+        let mut headers = HeaderMap::new();
+        let sdk = format!("rust:{}", env!("CARGO_PKG_VERSION"));
+        headers.insert(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json"),
+        );
+        // TODO: framework might need to change
+        headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static("axum"));
+        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&sdk).unwrap());
+        headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
+
         match self {
             Error::Dev(err) => match err {
-                DevError::Basic(msg) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!(msg))),
-                DevError::RetryAt(_err) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!("retry after error")),
-                ),
+                DevError::Basic(msg) => {
+                    (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(json!(msg)))
+                }
+                DevError::RetryAt(retry) => {
+                    headers.insert(
+                        header::RETRY_AFTER,
+                        HeaderValue::from(retry.after.as_secs()),
+                    );
+
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        headers,
+                        Json(json!(StepError {
+                            name: "RetryAfterError".to_string(),
+                            message: retry.message,
+                            stack: retry.cause,
+                            data: None,
+                        })),
+                    )
+                }
                 DevError::NoRetry(_err) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
+                    headers,
                     Json(json!("no retry error")),
                 ),
             },
             Error::NoInvokeFunctionResponseError => (
                 StatusCode::INTERNAL_SERVER_ERROR,
+                headers,
                 Json(json!("No invoke response")),
             ),
             _ => (
                 StatusCode::INTERNAL_SERVER_ERROR,
+                headers,
                 Json(json!("NOT IMPLEMENTED")),
             ),
         }
@@ -173,12 +183,13 @@ pub struct StepError {
     pub message: String,
     pub stack: Option<String>,
     // not part of the spec but it's used in the Go SDK to deserialize into the original user error
+    #[serde(skip_serializing)]
     pub data: Option<serde_json::Value>,
 }
 
 pub struct RetryAfterError {
     pub message: String,
-    pub retry_after: i64,
+    pub after: Duration,
     pub cause: Option<String>,
 }
 
@@ -186,8 +197,9 @@ impl Display for RetryAfterError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Error: {}, retrying after timestamp: {}",
-            &self.message, &self.retry_after
+            "Error: {}, retrying after {}s",
+            &self.message,
+            self.after.as_secs()
         )
     }
 }
@@ -201,8 +213,10 @@ impl Debug for RetryAfterError {
 
         write!(
             f,
-            "Error: {}\nRetrying after timestamp: {}\nCause: {}",
-            &self.message, &self.retry_after, &cause
+            "Error: {}\nRetrying after {}s:\nCause: {}",
+            &self.message,
+            self.after.as_secs(),
+            &cause
         )
     }
 }

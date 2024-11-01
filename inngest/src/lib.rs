@@ -10,3 +10,4 @@ pub mod serve;
 pub mod signature;
 pub mod step_tool;
 pub(crate) mod utils;
+pub(crate) mod version;

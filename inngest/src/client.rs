@@ -1,29 +1,34 @@
+use serde_json::Value;
+use slug::slugify;
+use std::future::Future;
 use url::Url;
 
 use crate::{
     config::Config,
     event::{Event, InngestEvent},
+    function::{FunctionOpts, Input, ServableFn, Trigger},
     handler::Kind,
     result::DevError,
+    step_tool::Step as StepTool,
 };
 
 const API_ORIGIN_DEV: &str = "http://127.0.0.1:8288";
-const EVENT_API_ORIGIN: &str = "https://inn.gs";
-const API_ORIGIN: &str = "https://api.inngest.com";
+pub(crate) const EVENT_API_ORIGIN: &str = "https://inn.gs";
+pub(crate) const API_ORIGIN: &str = "https://api.inngest.com";
 
 #[derive(Clone)]
 pub struct Inngest {
-    pub app_id: String,
-    api_origin: Option<String>,
-    event_api_origin: Option<String>,
-    event_key: Option<String>,
-    env: Option<String>,
+    id: String,
+    pub(crate) api_origin: Option<String>,
+    pub(crate) event_api_origin: Option<String>,
+    pub(crate) event_key: Option<String>,
+    pub(crate) env: Option<String>,
     dev: Option<String>,
     http: reqwest::Client,
 }
 
 impl Inngest {
-    pub fn new(app_id: &str) -> Self {
+    pub fn new(id: &str) -> Self {
         // initialize variable values here using environment variables
         let api_origin = Config::api_origin();
         let event_api_origin = Config::event_api_origin();
@@ -36,7 +41,7 @@ impl Inngest {
         });
 
         Inngest {
-            app_id: app_id.to_string(),
+            id: id.to_string(),
             api_origin,
             event_api_origin,
             event_key,
@@ -44,6 +49,10 @@ impl Inngest {
             dev,
             http: reqwest::Client::new(),
         }
+    }
+
+    pub fn app_id(&self) -> String {
+        slugify(self.id.clone())
     }
 
     pub fn api_origin(mut self, url: &str) -> Self {
@@ -73,6 +82,27 @@ impl Inngest {
         };
         self.dev = url;
         self
+    }
+
+    pub fn create_function<
+        T: 'static,
+        E,
+        F: Future<Output = Result<Value, E>> + Send + Sync + 'static,
+    >(
+        &self,
+        opts: FunctionOpts,
+        trigger: Trigger,
+        func: impl Fn(Input<T>, StepTool) -> F + Send + Sync + 'static,
+    ) -> ServableFn<T, E> {
+        use futures::future::FutureExt;
+
+        let app_id = self.app_id();
+        ServableFn {
+            app_id,
+            opts,
+            trigger,
+            func: Box::new(move |input, step| func(input, step).boxed()),
+        }
     }
 
     // TODO: make the result return something properly
