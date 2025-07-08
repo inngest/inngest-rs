@@ -46,7 +46,16 @@ impl<T, E> Handler<T, E> {
         let signing_key = Config::signing_key();
         let serve_origin = Config::serve_origin();
         let serve_path = Config::serve_path();
-        let mode = Config::mode();
+        let mode = match client.dev.clone() {
+            None => Kind::Cloud,
+            Some(v) => {
+                if v != "0" {
+                    Kind::Dev
+                } else {
+                    Kind::Cloud
+                }
+            }
+        };
 
         Handler {
             signing_key,

@@ -23,7 +23,7 @@ pub struct Inngest {
     pub(crate) event_api_origin: Option<String>,
     pub(crate) event_key: Option<String>,
     pub(crate) env: Option<String>,
-    dev: Option<String>,
+    pub(crate) dev: Option<String>,
     http: reqwest::Client,
 }
 

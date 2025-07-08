@@ -29,6 +29,23 @@ We currently support the following web frameworks:
 
 If there are other frameworks you like to see, feel free to submit an issue, or add to the [roadmap](https://roadmap.inngest.com/roadmap).
 
+## Supported features
+
+
+| Features              | Support            |
+|-----------------------|--------------------|
+| `step.run`            | :white_check_mark: |
+| `step.sleep`          | :white_check_mark: |
+| `step.wait_for_event` | :white_check_mark: |
+| `step.invoke`         | :white_check_mark: |
+| `step.send_event`     | :x:                |
+| CancelOn              | :x:                |
+| Failure handler       | :x:                |
+| Retry controls        | :white_check_mark: |
+| Middleware            | :x:                |
+| Connect               | :x:                |
+| AgentKit              | :x:                |
+
 ## Getting Started
 
 ``` toml

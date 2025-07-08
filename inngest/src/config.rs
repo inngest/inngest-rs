@@ -1,7 +1,5 @@
 use std::env;
 
-use crate::handler::Kind;
-
 // client side
 const INNGEST_API_ORIGIN: &str = "INNGEST_API_ORIGIN";
 const INNGEST_EVENT_API_ORIGIN: &str = "INNGEST_EVENT_API_ORIGIN";
@@ -13,9 +11,6 @@ const INNGEST_DEV: &str = "INNGEST_DEV";
 const INNGEST_SIGNING_KEY: &str = "INNGEST_SIGNING_KEY";
 const INNGEST_SERVE_ORIGIN: &str = "INNGEST_SERVE_ORIGIN";
 const INNGEST_SERVE_PATH: &str = "INNGEST_SERVE_PATH";
-
-// optional
-const INNGEST_MODE: &str = "INNGEST_MODE";
 
 pub(crate) struct Config {}
 
@@ -50,16 +45,6 @@ impl Config {
 
     pub fn serve_path() -> Option<String> {
         Self::read_env_str(INNGEST_SERVE_PATH)
-    }
-
-    pub fn mode() -> Kind {
-        match Self::read_env_str(INNGEST_MODE) {
-            None => Kind::Dev,
-            Some(v) => match v.to_lowercase().as_str() {
-                "cloud" => Kind::Cloud,
-                _ => Kind::Dev,
-            },
-        }
     }
 
     // helper methods
