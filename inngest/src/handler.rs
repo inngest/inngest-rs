@@ -48,10 +48,12 @@ impl<T, E> Handler<T, E> {
         let serve_path = Config::serve_path();
         let mode = match client.dev.clone() {
             None => Kind::Cloud,
-            Some(v) => if v != "0" {
-                Kind::Dev
-            } else {
-                Kind::Cloud
+            Some(v) => {
+                if v != "0" {
+                    Kind::Dev
+                } else {
+                    Kind::Cloud
+                }
             }
         };
 
