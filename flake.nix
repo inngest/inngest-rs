@@ -25,6 +25,7 @@
 
             # tools
             git-cliff
+            claude-code
 
             # deps
             pkg-config
