@@ -309,10 +309,7 @@ impl<T, E> Handler<T, E> {
 
                 match serde_json::from_str::<InngestSyncSuccess>(&body) {
                     Ok(res) => {
-                        let modified = match res.modified.clone() {
-                            None => false,
-                            Some(v) => v,
-                        };
+                        let modified = res.modified.unwrap_or(false);
 
                         Ok(SyncResponse::OutOfBand(OutOfBandSyncResponse {
                             message: "Successfully synced.".to_string(),
@@ -471,13 +468,6 @@ struct RunRequestCtx {
     // fn_id: String,
     run_id: String,
     // step_id: String,
-    // stack: RunRequestCtxStack,
-}
-
-#[derive(Deserialize, Debug)]
-struct RunRequestCtxStack {
-    // current: u32,
-    // stack: Vec<String>,
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize)]
@@ -556,13 +546,9 @@ pub struct OutOfBandSyncResponse {
     modified: bool,
 }
 
-#[derive(Deserialize)]
-pub struct InngestSyncError {
-    error: String,
-}
-
 #[derive(Deserialize, Debug)]
 pub struct InngestSyncSuccess {
-    ok: bool,
+    #[serde(rename = "ok")]
+    _ok: bool,
     modified: Option<bool>,
 }
