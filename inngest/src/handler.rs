@@ -300,22 +300,31 @@ impl<T, E> Handler<T, E> {
         }
 
         match sync_req.send().await {
-            Ok(resp) => match resp.json::<InngestSyncSuccess>().await {
-                Ok(res) => {
-                    let modified = match res.modified.clone() {
-                        None => false,
-                        Some(v) => v,
-                    };
+            Ok(resp) => {
+                let status = resp.status();
+                let body = match resp.text().await {
+                    Ok(body) => body,
+                    Err(err) => return Err(format!("error reading sync response body: {err}")),
+                };
 
-                    Ok(SyncResponse::OutOfBand(OutOfBandSyncResponse {
-                        message: "Successfully synced.".to_string(),
-                        modified,
-                    }))
+                match serde_json::from_str::<InngestSyncSuccess>(&body) {
+                    Ok(res) => {
+                        let modified = match res.modified.clone() {
+                            None => false,
+                            Some(v) => v,
+                        };
+
+                        Ok(SyncResponse::OutOfBand(OutOfBandSyncResponse {
+                            message: "Successfully synced.".to_string(),
+                            modified,
+                        }))
+                    }
+                    Err(err) => Err(format!(
+                        "error parsing sync response (status {}): {} | body: {}",
+                        status, err, body
+                    )),
                 }
-                Err(_) => {
-                    return Err("error parsing sync response".to_string());
-                }
-            },
+            }
             Err(err) => {
                 println!("ERROR: {:?}", err);
 

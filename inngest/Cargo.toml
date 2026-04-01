@@ -13,10 +13,10 @@ repository = "https://github.com/inngest/inngest-rs"
 
 [dependencies]
 reqwest = { version = "0.11", features = ["json"] }
-axum = "0.6"
-hyper = { version = "0.14", features = ["full"] }
+axum = "0.8"
+hyper = { version = "1", features = ["full"] }
 tokio = { version = "1.29", features = ["full"] }
-tower = "0.4"
+tower = "0.5"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 slug = "0.1"

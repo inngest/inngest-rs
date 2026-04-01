@@ -16,6 +16,10 @@ const API_ORIGIN_DEV: &str = "http://127.0.0.1:8288";
 pub(crate) const EVENT_API_ORIGIN: &str = "https://inn.gs";
 pub(crate) const API_ORIGIN: &str = "https://api.inngest.com";
 
+fn normalize_origin(origin: &str) -> String {
+    origin.trim_end_matches('/').to_string()
+}
+
 #[derive(Clone)]
 pub struct Inngest {
     id: String,
@@ -36,7 +40,7 @@ impl Inngest {
         let env = Config::env();
         // if the value is a URL, use it. otherwise set a default URL
         let dev = Config::dev().map(|v| match Url::parse(&v) {
-            Ok(val) => val.to_string(),
+            Ok(val) => normalize_origin(val.as_str()),
             Err(_) => API_ORIGIN_DEV.to_string(),
         });
 
@@ -56,12 +60,12 @@ impl Inngest {
     }
 
     pub fn api_origin(mut self, url: &str) -> Self {
-        self.api_origin = Some(url.to_string());
+        self.api_origin = Some(normalize_origin(url));
         self
     }
 
     pub fn event_api_origin(mut self, url: &str) -> Self {
-        self.event_api_origin = Some(url.to_string());
+        self.event_api_origin = Some(normalize_origin(url));
         self
     }
 
@@ -77,7 +81,7 @@ impl Inngest {
 
     pub fn dev(mut self, dev: &str) -> Self {
         let url = match Url::parse(dev) {
-            Ok(val) => Some(val.to_string()),
+            Ok(val) => Some(normalize_origin(val.as_str())),
             Err(_) => Some(API_ORIGIN_DEV.to_string()),
         };
         self.dev = url;
