@@ -30,6 +30,7 @@ pub struct FunctionOpts {
     pub id: String,
     pub name: Option<String>,
     pub retries: u8,
+    pub concurrency: Option<FunctionConcurrency>,
 }
 
 impl Default for FunctionOpts {
@@ -38,8 +39,18 @@ impl Default for FunctionOpts {
             id: String::new(),
             name: None,
             retries: 3,
+            concurrency: None,
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FunctionConcurrency {
+    pub limit: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 impl FunctionOpts {
@@ -52,6 +63,15 @@ impl FunctionOpts {
 
     pub fn name(mut self, name: &str) -> Self {
         self.name = Some(name.to_string());
+        self
+    }
+
+    pub fn concurrency(mut self, limit: u16) -> Self {
+        self.concurrency = Some(FunctionConcurrency {
+            limit,
+            scope: None,
+            key: None,
+        });
         self
     }
 }
@@ -120,6 +140,7 @@ impl<T, E> ServableFn<T, E> {
             name,
             triggers: vec![self.trigger.clone()],
             steps,
+            concurrency: self.opts.concurrency.clone(),
         }
     }
 }
@@ -130,6 +151,8 @@ pub struct Function {
     pub name: String,
     pub triggers: Vec<Trigger>,
     pub steps: HashMap<String, Step>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub concurrency: Option<FunctionConcurrency>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
