@@ -1,17 +1,18 @@
-use std::{collections::HashMap, fmt::Debug, panic::AssertUnwindSafe};
+use std::{collections::HashMap, panic::AssertUnwindSafe, sync::Arc};
 
-use futures::FutureExt;
+use futures::{future::BoxFuture, FutureExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha1::Digest;
 use sha2::Sha256;
+use slug::slugify;
 
 use crate::{
     basic_error,
     client::{self, Inngest},
     config::Config,
-    event::Event,
-    function::{Function, Input, InputCtx, ServableFn},
+    event::{Event, InngestEvent},
+    function::{Function, FunctionOpts, Input, InputCtx, ServableFn, Trigger},
     header::Headers,
     result::{Error, FlowControlVariant, SdkResponse},
     sdk::Request,
@@ -19,13 +20,181 @@ use crate::{
     step_tool::Step as StepTool,
 };
 
-pub struct Handler<T: 'static, E> {
+type DynamicFn = dyn Fn(Inngest, String, Value) -> BoxFuture<'static, Result<SdkResponse, Error>>
+    + Send
+    + Sync
+    + 'static;
+
+struct DynamicServableFn {
+    app_id: String,
+    opts: FunctionOpts,
+    trigger: Trigger,
+    func: Box<DynamicFn>,
+}
+
+impl DynamicServableFn {
+    fn slug(&self) -> String {
+        format!("{}-{}", &self.app_id, slugify(self.opts.id.clone()))
+    }
+
+    fn function(&self, serve_origin: &str, serve_path: &str) -> Function {
+        let id = self.slug();
+        let name = match self.opts.name.clone() {
+            Some(name) => name,
+            None => id.clone(),
+        };
+
+        let mut steps = HashMap::new();
+        steps.insert(
+            "step".to_string(),
+            crate::function::Step {
+                id: "step".to_string(),
+                name: "step".to_string(),
+                runtime: crate::function::StepRuntime {
+                    url: format!("{}{}?fnId={}&step=step", serve_origin, serve_path, &id),
+                    method: "http".to_string(),
+                },
+                retries: crate::function::StepRetry {
+                    attempts: self.opts.retries,
+                },
+            },
+        );
+
+        Function {
+            id,
+            name,
+            triggers: vec![self.trigger.clone()],
+            steps,
+            concurrency: self.opts.concurrency.clone(),
+        }
+    }
+
+    async fn run(
+        &self,
+        inngest: Inngest,
+        fn_id: String,
+        body: Value,
+    ) -> Result<SdkResponse, Error> {
+        (self.func)(inngest, fn_id, body).await
+    }
+}
+
+impl<T, E> From<ServableFn<T, E>> for DynamicServableFn
+where
+    T: InngestEvent + Send,
+    E: Into<Error> + 'static,
+{
+    fn from(func: ServableFn<T, E>) -> Self {
+        let ServableFn {
+            app_id,
+            opts,
+            trigger,
+            func,
+        } = func;
+        let func = Arc::new(func);
+
+        Self {
+            app_id,
+            opts,
+            trigger,
+            func: Box::new(move |inngest, fn_id, body| {
+                let step_func = Arc::clone(&func);
+
+                async move {
+                    let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
+                        Ok(res) => res,
+                        Err(err) => {
+                            println!("ERROR: {:?}", err);
+                            println!("BODY: {:#?}", &body);
+                            let msg = basic_error!("error parsing run request: {}", err);
+                            return Err(msg);
+                        }
+                    };
+
+                    if data.use_api {}
+
+                    let input = Input {
+                        event: data.event,
+                        events: data.events,
+                        ctx: InputCtx {
+                            env: data.ctx.env.clone(),
+                            fn_id,
+                            run_id: data.ctx.run_id.clone(),
+                            step_id: "step".to_string(),
+                            attempt: data.ctx.attempt,
+                        },
+                    };
+
+                    let step_tool = StepTool::new(&data.steps, Some(inngest.clone()));
+
+                    match std::panic::catch_unwind(AssertUnwindSafe(|| {
+                        (step_func)(input, step_tool.clone())
+                    })) {
+                        Ok(fut) => match AssertUnwindSafe(fut).catch_unwind().await {
+                            Ok(v) => match v {
+                                Ok(v) => Ok(SdkResponse {
+                                    status: 200,
+                                    body: v,
+                                }),
+                                Err(err) => match err.into() {
+                                    Error::Interrupt(mut flow) => {
+                                        flow.acknowledge();
+                                        match flow.variant {
+                                            FlowControlVariant::StepGenerator => {
+                                                let (status, body) = if step_tool.error().is_some() {
+                                                    match serde_json::to_value(&step_tool.error()) {
+                                                        Ok(v) => (500, v),
+                                                        Err(err) => {
+                                                            return Err(basic_error!(
+                                                                "error seralizing step error: {}",
+                                                                err
+                                                            ));
+                                                        }
+                                                    }
+                                                } else if step_tool.genop().len() > 0 {
+                                                    match serde_json::to_value(&step_tool.genop()) {
+                                                        Ok(v) => (206, v),
+                                                        Err(err) => {
+                                                            return Err(basic_error!(
+                                                                "error serializing step response: {}",
+                                                                err
+                                                            ));
+                                                        }
+                                                    }
+                                                } else {
+                                                    (206, json!("null"))
+                                                };
+                                                Ok(SdkResponse { status, body })
+                                            }
+                                        }
+                                    }
+                                    other => Err(other),
+                                },
+                            },
+                            Err(panic_err) => Ok(SdkResponse {
+                                status: 500,
+                                body: Value::String(format!("panic: {:?}", panic_err)),
+                            }),
+                        },
+                        Err(panic_err) => Ok(SdkResponse {
+                            status: 500,
+                            body: Value::String(format!("panic: {:?}", panic_err)),
+                        }),
+                    }
+                }
+                .boxed()
+            }),
+        }
+    }
+}
+
+pub struct Handler {
     inngest: Inngest,
     signing_key: Option<String>,
     // TODO: signing_key_fallback
     serve_origin: Option<String>,
     serve_path: Option<String>,
-    funcs: HashMap<String, ServableFn<T, E>>,
+    funcs: HashMap<String, DynamicServableFn>,
     mode: Kind,
 }
 
@@ -41,7 +210,7 @@ pub struct SyncQueryParams {
     deploy_id: Option<String>,
 }
 
-impl<T, E> Handler<T, E> {
+impl Handler {
     pub fn new(client: &Inngest) -> Self {
         let signing_key = Config::signing_key();
         let serve_origin = Config::serve_origin();
@@ -82,13 +251,22 @@ impl<T, E> Handler<T, E> {
         self
     }
 
-    pub fn register_fn(&mut self, func: ServableFn<T, E>) {
+    pub fn register_fn<T, E>(&mut self, func: ServableFn<T, E>)
+    where
+        T: InngestEvent + Send,
+        E: Into<Error> + 'static,
+    {
+        let func = DynamicServableFn::from(func);
         self.funcs.insert(func.slug(), func);
     }
 
-    pub fn register_fns(&mut self, funcs: Vec<ServableFn<T, E>>) {
+    pub fn register_fns<T, E>(&mut self, funcs: Vec<ServableFn<T, E>>)
+    where
+        T: InngestEvent + Send,
+        E: Into<Error> + 'static,
+    {
         for f in funcs {
-            self.funcs.insert(f.slug(), f);
+            self.register_fn(f);
         }
     }
 
@@ -336,11 +514,7 @@ impl<T, E> Handler<T, E> {
         query: &RunQueryParams,
         raw_body: &str,
         body: &Value,
-    ) -> Result<SdkResponse, Error>
-    where
-        T: for<'de> Deserialize<'de> + Debug,
-        E: Into<Error>,
-    {
+    ) -> Result<SdkResponse, Error> {
         let sig = headers.signature();
         let kind = headers.server_kind();
         if kind == Kind::Cloud && sig.is_none() {
@@ -352,20 +526,6 @@ impl<T, E> Handler<T, E> {
             _ = self.verify_signature(&sig, raw_body)?;
         }
 
-        let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
-            Ok(res) => res,
-            Err(err) => {
-                println!("ERROR: {:?}", err);
-                println!("BODY: {:#?}", &body);
-                // TODO: need to surface this error better
-                let msg = basic_error!("error parsing run request: {}", err);
-                return Err(msg);
-            }
-        };
-
-        // TODO: retrieve data from API on flag
-        if data.use_api {}
-
         // find the specified function
         let Some(func) = self.funcs.get(&query.fn_id) else {
             return Err(basic_error!(
@@ -374,78 +534,8 @@ impl<T, E> Handler<T, E> {
             ));
         };
 
-        let input = Input {
-            event: data.event,
-            events: data.events,
-            ctx: InputCtx {
-                env: data.ctx.env.clone(),
-                fn_id: query.fn_id.clone(),
-                run_id: data.ctx.run_id.clone(),
-                step_id: "step".to_string(),
-                attempt: data.ctx.attempt,
-            },
-        };
-
-        let step_tool = StepTool::new(&data.steps, Some(self.inngest.clone()));
-
-        match std::panic::catch_unwind(AssertUnwindSafe(|| (func.func)(input, step_tool.clone()))) {
-            Ok(fut) => {
-                match AssertUnwindSafe(fut).catch_unwind().await {
-                    Ok(v) => match v {
-                        Ok(v) => Ok(SdkResponse {
-                            status: 200,
-                            body: v,
-                        }),
-                        Err(err) => match err.into() {
-                            Error::Interrupt(mut flow) => {
-                                flow.acknowledge();
-                                match flow.variant {
-                                    FlowControlVariant::StepGenerator => {
-                                        let (status, body) = if step_tool.error().is_some() {
-                                            match serde_json::to_value(&step_tool.error()) {
-                                                Ok(v) => {
-                                                    // TODO: check current attempts and see if it can retry or not
-                                                    (500, v)
-                                                }
-                                                Err(err) => {
-                                                    return Err(basic_error!(
-                                                        "error seralizing step error: {}",
-                                                        err
-                                                    ));
-                                                }
-                                            }
-                                        } else if step_tool.genop().len() > 0 {
-                                            // TODO: only expecting one for now, will need to handle multiple
-                                            match serde_json::to_value(&step_tool.genop()) {
-                                                Ok(v) => (206, v),
-                                                Err(err) => {
-                                                    return Err(basic_error!(
-                                                        "error serializing step response: {}",
-                                                        err
-                                                    ));
-                                                }
-                                            }
-                                        } else {
-                                            (206, json!("null"))
-                                        };
-                                        Ok(SdkResponse { status, body })
-                                    }
-                                }
-                            }
-                            other => Err(other),
-                        },
-                    },
-                    Err(panic_err) => Ok(SdkResponse {
-                        status: 500,
-                        body: Value::String(format!("panic: {:?}", panic_err)),
-                    }),
-                }
-            }
-            Err(panic_err) => Ok(SdkResponse {
-                status: 500,
-                body: Value::String(format!("panic: {:?}", panic_err)),
-            }),
-        }
+        func.run(self.inngest.clone(), query.fn_id.clone(), body.clone())
+            .await
     }
     // run the function
 }

@@ -12,41 +12,36 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::Deserialize;
 use serde_json::json;
-use std::{fmt::Debug, sync::Arc};
+use std::sync::Arc;
 
 const FRAMEWORK: &str = "axum";
 
-pub async fn introspect<T, E>(
+pub async fn introspect(
     hmap: HeaderMap,
-    State(handler): State<Arc<Handler<T, E>>>,
+    State(handler): State<Arc<Handler>>,
     raw: String,
 ) -> Result<IntrospectResult, Error> {
     let headers = Headers::from(hmap);
     handler.introspect(&headers, FRAMEWORK, &raw).await
 }
 
-pub async fn register<T, E>(
+pub async fn register(
     hmap: HeaderMap,
     Query(query): Query<SyncQueryParams>,
-    State(handler): State<Arc<Handler<T, E>>>,
+    State(handler): State<Arc<Handler>>,
 ) -> Result<SyncResponse, String> {
     // convert the http headers into a generic hashmap
     let headers = Headers::from(hmap);
     handler.sync(&headers, &query, FRAMEWORK).await
 }
 
-pub async fn invoke<T, E>(
+pub async fn invoke(
     hmap: HeaderMap,
     Query(query): Query<RunQueryParams>,
-    State(handler): State<Arc<Handler<T, E>>>,
+    State(handler): State<Arc<Handler>>,
     raw: String,
-) -> Result<SdkResponse, Error>
-where
-    T: for<'de> Deserialize<'de> + Debug,
-    E: Into<Error>,
-{
+) -> Result<SdkResponse, Error> {
     let headers = Headers::from(hmap);
     match serde_json::from_str(&raw) {
         Ok(body) => handler.run(&headers, &query, &raw, &body).await,
