@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use slug::slugify;
 use std::future::Future;
@@ -15,6 +16,13 @@ use crate::{
 const API_ORIGIN_DEV: &str = "http://127.0.0.1:8288";
 pub(crate) const EVENT_API_ORIGIN: &str = "https://inn.gs";
 pub(crate) const API_ORIGIN: &str = "https://api.inngest.com";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SendEventResponse {
+    pub ids: Vec<String>,
+    pub status: Option<u16>,
+    pub error: Option<String>,
+}
 
 fn normalize_origin(origin: &str) -> String {
     origin.trim_end_matches('/').to_string()
@@ -88,11 +96,7 @@ impl Inngest {
         self
     }
 
-    pub fn create_function<
-        T: 'static,
-        E,
-        F: Future<Output = Result<Value, E>> + Send + Sync + 'static,
-    >(
+    pub fn create_function<T: 'static, E, F: Future<Output = Result<Value, E>> + Send + 'static>(
         &self,
         opts: FunctionOpts,
         trigger: Trigger,
@@ -109,24 +113,31 @@ impl Inngest {
         }
     }
 
-    // TODO: make the result return something properly
-    pub async fn send_event<T: InngestEvent>(&self, evt: &Event<T>) -> Result<(), DevError> {
-        self.http
+    pub async fn send_event<T: InngestEvent>(
+        &self,
+        evt: &Event<T>,
+    ) -> Result<SendEventResponse, DevError> {
+        let response = self
+            .http
             .post(format!(
                 "{}/e/{}",
                 self.inngest_evt_api_origin(),
                 self.inngest_evt_api_key()
             ))
-            .json(&evt)
+            .json(evt)
             .send()
             .await
-            .map(|_| ())
-            .map_err(|err| DevError::Basic(format!("{}", err)))
+            .map_err(|err| DevError::Basic(format!("{}", err)))?;
+
+        parse_send_event_response(response).await
     }
 
-    // TODO: make the result return something properly
-    pub async fn send_events<T: InngestEvent>(&self, evts: &[&Event<T>]) -> Result<(), DevError> {
-        self.http
+    pub async fn send_events<T: InngestEvent>(
+        &self,
+        evts: &[Event<T>],
+    ) -> Result<SendEventResponse, DevError> {
+        let response = self
+            .http
             .post(format!(
                 "{}/e/{}",
                 self.inngest_evt_api_origin(),
@@ -135,8 +146,9 @@ impl Inngest {
             .json(&evts)
             .send()
             .await
-            .map(|_| ())
-            .map_err(|err| DevError::Basic(format!("{}", err)))
+            .map_err(|err| DevError::Basic(format!("{}", err)))?;
+
+        parse_send_event_response(response).await
     }
 
     pub(crate) fn inngest_api_origin(&self, kind: Kind) -> String {
@@ -176,4 +188,34 @@ impl Inngest {
             None => "test".to_string(),
         }
     }
+}
+
+async fn parse_send_event_response(
+    response: reqwest::Response,
+) -> Result<SendEventResponse, DevError> {
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| DevError::Basic(format!("{}", err)))?;
+    let mut parsed = serde_json::from_str::<SendEventResponse>(&response_text)
+        .map_err(|err| DevError::Basic(format!("failed to parse send event response: {err}")))?;
+
+    if parsed.status.is_none() {
+        parsed.status = Some(status.as_u16());
+    }
+
+    if !status.is_success() {
+        let message = parsed
+            .error
+            .clone()
+            .unwrap_or_else(|| format!("failed to send event(s): HTTP {}", status.as_u16()));
+        return Err(DevError::Basic(message));
+    }
+
+    if let Some(error) = parsed.error.clone() {
+        return Err(DevError::Basic(error));
+    }
+
+    Ok(parsed)
 }

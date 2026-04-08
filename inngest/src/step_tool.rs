@@ -13,6 +13,7 @@ use state::State;
 
 use crate::{
     basic_error,
+    client::{Inngest, SendEventResponse},
     event::{Event, InngestEvent},
     result::{Error, FlowControlError, StepError},
     utils::duration,
@@ -116,6 +117,7 @@ mod state {
 #[derive(Clone)]
 pub struct Step {
     state: state::State,
+    client: Option<Inngest>,
 }
 
 #[derive(Deserialize)]
@@ -123,6 +125,13 @@ pub struct Step {
 enum StepRunResult<T, E> {
     Data(T),
     Error(E),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StoredSendEventResult {
+    Raw(SendEventResponse),
+    Wrapped(StepRunResult<SendEventResponse, Value>),
 }
 
 pub trait UserProvidedError<'a>: StdError + Serialize + Deserialize<'a> + Into<Error> {}
@@ -133,9 +142,10 @@ impl<E> UserProvidedError<'_> for E where
 }
 
 impl Step {
-    pub fn new(state: &HashMap<String, Option<Value>>) -> Self {
+    pub fn new(state: &HashMap<String, Option<Value>>, client: Option<Inngest>) -> Self {
         Step {
             state: State::new(state),
+            client,
         }
     }
 
@@ -377,6 +387,56 @@ impl Step {
         }
     }
 
+    pub async fn send_event<T: InngestEvent>(
+        &self,
+        id: &str,
+        event: Event<T>,
+    ) -> Result<SendEventResponse, Error> {
+        self.send_events(id, vec![event]).await
+    }
+
+    pub async fn send_events<T: InngestEvent>(
+        &self,
+        id: &str,
+        events: Vec<Event<T>>,
+    ) -> Result<SendEventResponse, Error> {
+        let op = self.new_op(id);
+        let hashed = op.hash();
+
+        if let Some(Some(stored_value)) = self.remove(&hashed) {
+            let stored_result = serde_json::from_value::<StoredSendEventResult>(stored_value)
+                .map_err(|err| basic_error!("error deserializing send event result: {}", err))?;
+
+            return match stored_result {
+                StoredSendEventResult::Raw(result) => Ok(result),
+                StoredSendEventResult::Wrapped(StepRunResult::Data(result)) => Ok(result),
+                StoredSendEventResult::Wrapped(StepRunResult::Error(_)) => Err(basic_error!(
+                    "unexpected error payload when replaying send event result"
+                )),
+            };
+        }
+
+        let client = self
+            .client
+            .clone()
+            .ok_or_else(|| basic_error!("no inngest client configured for step.send_event"))?;
+        let result = client.send_events(events.as_slice()).await?;
+        let serialized = serde_json::to_value(&result).map_err(|e| basic_error!("{}", e))?;
+
+        self.push_op(GeneratorOpCode {
+            op: Opcode::StepRun,
+            id: hashed,
+            name: "sendEvent".to_string(),
+            display_name: id.to_string(),
+            data: serialized.into(),
+            opts: json!({
+                "type": "step.sendEvent"
+            }),
+        });
+
+        Err(Error::Interrupt(FlowControlError::step_generator()))
+    }
+
     fn unix_ts_to_systime(&self, ts: i64) -> SystemTime {
         if ts >= 0 {
             time::UNIX_EPOCH + Duration::from_millis(ts as u64)
@@ -427,7 +487,23 @@ impl Op {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+
+    use axum::{extract::State, routing::post, Json, Router};
+    use tokio::net::TcpListener;
+
     use super::*;
+    use crate::client::Inngest;
+
+    #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+    struct TestEventData {
+        id: u32,
+    }
+
+    #[derive(Clone)]
+    struct TestEventState {
+        ids: Arc<Vec<String>>,
+    }
 
     #[test]
     fn test_op_hash() {
@@ -447,5 +523,145 @@ mod tests {
         };
 
         assert_eq!(op.hash(), "20A9BB9477C4AC565CF084D1614C58BBF0A523FF");
+    }
+
+    #[tokio::test]
+    async fn send_event_generates_step_result_with_sent_ids() {
+        let (address, _handle) = spawn_event_api_server(vec!["evt_1".to_string()]).await;
+        let client = Inngest::new("test-app")
+            .dev(&format!("http://{address}"))
+            .event_key("test");
+        let step = Step::new(&HashMap::new(), Some(client));
+        let event = Event::new("test/event", TestEventData { id: 1 });
+
+        let result = step.send_event("emit-user-creation", event).await;
+
+        match result {
+            Err(Error::Interrupt(mut flow)) => flow.acknowledge(),
+            other => panic!("expected interrupt, got {other:?}"),
+        }
+        assert_eq!(step.genop().len(), 1);
+
+        let payload =
+            serde_json::to_value(&step.genop()[0]).expect("generator opcode should serialize");
+        assert_eq!(payload["name"], "sendEvent");
+        assert_eq!(payload["displayName"], "emit-user-creation");
+        assert_eq!(payload["opts"]["type"], "step.sendEvent");
+        assert_eq!(payload["data"]["ids"], json!(["evt_1"]));
+    }
+
+    #[tokio::test]
+    async fn send_event_replays_stored_result_without_client() {
+        let mut state = HashMap::new();
+        let op = Op {
+            id: "emit-user-creation".to_string(),
+            pos: 1,
+        };
+        state.insert(
+            op.hash(),
+            Some(json!({
+                "ids": ["evt_1"],
+                "status": 200,
+                "error": null
+            })),
+        );
+        let step = Step::new(&state, None);
+
+        let result = step
+            .send_event(
+                "emit-user-creation",
+                Event::new("test/event", TestEventData { id: 1 }),
+            )
+            .await
+            .expect("stored send event result should replay");
+
+        assert_eq!(result.ids, vec!["evt_1".to_string()]);
+        assert!(step.genop().is_empty());
+    }
+
+    #[tokio::test]
+    async fn send_event_replays_wrapped_step_result_without_client() {
+        let mut state = HashMap::new();
+        let op = Op {
+            id: "emit-user-creation".to_string(),
+            pos: 1,
+        };
+        state.insert(
+            op.hash(),
+            Some(json!({
+                "data": {
+                    "ids": ["evt_1"],
+                    "status": 200,
+                    "error": null
+                }
+            })),
+        );
+        let step = Step::new(&state, None);
+
+        let result = step
+            .send_event(
+                "emit-user-creation",
+                Event::new("test/event", TestEventData { id: 1 }),
+            )
+            .await
+            .expect("wrapped stored send event result should replay");
+
+        assert_eq!(result.ids, vec!["evt_1".to_string()]);
+        assert!(step.genop().is_empty());
+    }
+
+    #[tokio::test]
+    async fn send_events_returns_multiple_ids_in_order() {
+        let (address, _handle) =
+            spawn_event_api_server(vec!["evt_1".to_string(), "evt_2".to_string()]).await;
+        let client = Inngest::new("test-app")
+            .dev(&format!("http://{address}"))
+            .event_key("test");
+        let step = Step::new(&HashMap::new(), Some(client));
+
+        let result = step
+            .send_events(
+                "emit-user-updates",
+                vec![
+                    Event::new("test/event", TestEventData { id: 1 }),
+                    Event::new("test/event", TestEventData { id: 2 }),
+                ],
+            )
+            .await;
+
+        match result {
+            Err(Error::Interrupt(mut flow)) => flow.acknowledge(),
+            other => panic!("expected interrupt, got {other:?}"),
+        }
+
+        let payload =
+            serde_json::to_value(&step.genop()[0]).expect("generator opcode should serialize");
+        assert_eq!(payload["data"]["ids"], json!(["evt_1", "evt_2"]));
+    }
+
+    async fn spawn_event_api_server(ids: Vec<String>) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+        async fn handle(
+            State(state): State<TestEventState>,
+            Json(_body): Json<Value>,
+        ) -> Json<Value> {
+            Json(json!({
+                "ids": state.ids.as_ref(),
+                "status": 200
+            }))
+        }
+
+        let state = TestEventState { ids: Arc::new(ids) };
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener should bind");
+        let address = listener.local_addr().expect("listener should have address");
+        let app = Router::new()
+            .route("/e/test", post(handle))
+            .with_state(state);
+        let handle = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("server should run");
+        });
+
+        (address, handle)
     }
 }

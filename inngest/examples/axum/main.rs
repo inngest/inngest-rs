@@ -12,6 +12,7 @@ use inngest::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{env, sync::Arc, time::Duration};
+use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() {
@@ -48,9 +49,9 @@ async fn main() {
         .parse::<std::net::SocketAddr>()
         .unwrap();
 
-    // run it with hyper on localhost:3000
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
+    let listener = TcpListener::bind(addr).await.unwrap();
+
+    axum::serve(listener, app.into_make_service())
         .await
         .unwrap();
 }

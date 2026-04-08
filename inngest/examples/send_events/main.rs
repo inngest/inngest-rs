@@ -20,14 +20,12 @@ async fn main() {
 
     let evt2 = Event::<Data>::new("test/yolo", Data { foo: 10, bar: 20 });
 
-    let evts: Vec<&Event<Data>> = vec![&evt, &evt2];
-
     match client.send_event(&evt).await {
         Ok(_) => println!("Success"),
         Err(_) => println!("Error"),
     }
 
-    match client.send_events(evts.as_slice()).await {
+    match client.send_events(&[evt, evt2]).await {
         Ok(_) => println!("List success"),
         Err(_) => println!("List error"),
     }
