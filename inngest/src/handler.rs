@@ -127,15 +127,10 @@ where
 
                     let step_tool = StepTool::new(&data.steps, Some(inngest.clone()));
 
-                    match std::panic::catch_unwind(AssertUnwindSafe(|| {
-                        (step_func)(input, step_tool.clone())
-                    })) {
+                    match std::panic::catch_unwind(AssertUnwindSafe(|| (step_func)(input, step_tool.clone()))) {
                         Ok(fut) => match AssertUnwindSafe(fut).catch_unwind().await {
                             Ok(v) => match v {
-                                Ok(v) => Ok(SdkResponse {
-                                    status: 200,
-                                    body: v,
-                                }),
+                                Ok(v) => Ok(SdkResponse { status: 200, body: v }),
                                 Err(err) => match err.into() {
                                     Error::Interrupt(mut flow) => {
                                         flow.acknowledge();
