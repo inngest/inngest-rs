@@ -26,6 +26,7 @@ Use standard conventional commit formatting such as `fix(promapi): handle empty 
 
 - commit in logical sections whenever possible to make each commit as reviewable by its own as possible
 - run `make lint` and tests targeting the changes to confirm expected results and there are no build failures
+- add comments to public structs, traits and functions so it materializes in cargo docs
 
 ### Tests
 
