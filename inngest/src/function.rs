@@ -108,7 +108,7 @@ impl<T, E> ServableFn<T, E> {
                 id: "step".to_string(),
                 name: "step".to_string(),
                 runtime: StepRuntime {
-                    url: format!("{}{}?fnId={}&step=step", serve_origin, serve_path, &id),
+                    url: format!("{}{}?fnId={}&stepId=step", serve_origin, serve_path, &id),
                     method: "http".to_string(),
                 },
                 retries: StepRetry {

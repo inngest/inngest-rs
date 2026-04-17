@@ -49,7 +49,7 @@ impl DynamicServableFn {
                 id: "step".to_string(),
                 name: "step".to_string(),
                 runtime: crate::function::StepRuntime {
-                    url: format!("{}{}?fnId={}&step=step", serve_origin, serve_path, &id),
+                    url: format!("{}{}?fnId={}&stepId=step", serve_origin, serve_path, &id),
                     method: "http".to_string(),
                 },
                 retries: crate::function::StepRetry {
@@ -944,9 +944,43 @@ mod tests {
 
         assert_eq!(payload.app_name, "test-app");
         assert_eq!(payload.framework, "axum");
+        assert_eq!(payload.v, "0.1");
+        assert_eq!(payload.sdk, crate::version::sdk());
+        assert_eq!(payload.url, "http://127.0.0.1:3000/api/inngest");
         assert_eq!(function_ids.len(), 2);
         assert!(function_ids.contains("test-app-first"));
         assert!(function_ids.contains("test-app-second"));
+    }
+
+    #[test]
+    fn sync_payload_uses_spec_step_runtime_url_shape() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let first_fn: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, _step| async move { Ok(json!({ "ok": true })) },
+        );
+
+        handler.register_fn(first_fn);
+
+        let payload = handler.sync_payload(&Headers::from(HeaderMap::new()), "axum");
+        let function = payload
+            .functions
+            .into_iter()
+            .next()
+            .expect("registered function should be present");
+        let step = function
+            .steps
+            .get("step")
+            .expect("default step should be present");
+
+        assert_eq!(
+            step.runtime.url,
+            "http://127.0.0.1:3000/api/inngest?fnId=test-app-first&stepId=step"
+        );
+        assert!(!payload.url.contains("deployId="));
     }
 
     fn event_body(name: &str, data: Value) -> Value {

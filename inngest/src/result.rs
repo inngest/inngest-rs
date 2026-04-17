@@ -11,7 +11,10 @@ use axum::{
 use serde::Serialize;
 use serde_json::{json, Value};
 
-use crate::header;
+use crate::{
+    header,
+    version::{self, EXECUTION_VERSION},
+};
 
 #[derive(Serialize)]
 pub struct SdkResponse {
@@ -124,69 +127,125 @@ impl Drop for FlowControlError {
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         let mut headers = HeaderMap::new();
-        let sdk = format!("rust:{}", env!("CARGO_PKG_VERSION"));
         headers.insert(
             header::CONTENT_TYPE,
             HeaderValue::from_static("application/json"),
         );
         // TODO: framework might need to change
         headers.insert(header::INNGEST_FRAMEWORK, HeaderValue::from_static("axum"));
-        headers.insert(header::INNGEST_SDK, HeaderValue::from_str(&sdk).unwrap());
-        headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
+        headers.insert(
+            header::INNGEST_SDK,
+            HeaderValue::from_str(&version::sdk()).unwrap(),
+        );
+        headers.insert(
+            header::INNGEST_REQ_VERSION,
+            HeaderValue::from_static(EXECUTION_VERSION),
+        );
 
         match self {
             Error::Dev(err) => match err {
-                DevError::Basic(msg) => {
-                    (StatusCode::INTERNAL_SERVER_ERROR, headers, Json(json!(msg)))
-                }
+                DevError::Basic(msg) => call_error_response(
+                    headers,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    false,
+                    None,
+                    StepError::new("Error", msg),
+                ),
                 DevError::RetryAt(retry) => {
-                    headers.insert(
-                        header::RETRY_AFTER,
-                        HeaderValue::from(retry.after.as_secs()),
-                    );
+                    let retry_after = HeaderValue::from(retry.after.as_secs());
 
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
+                    call_error_response(
                         headers,
-                        Json(json!(StepError {
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        false,
+                        Some(retry_after),
+                        StepError {
                             name: "RetryAfterError".to_string(),
                             message: retry.message,
                             stack: retry.cause,
                             data: None,
-                        })),
+                        },
                     )
                 }
-                DevError::NoRetry(_err) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
+                DevError::NoRetry(err) => call_error_response(
                     headers,
-                    Json(json!("no retry error")),
+                    StatusCode::BAD_REQUEST,
+                    true,
+                    None,
+                    StepError {
+                        name: "NonRetryableError".to_string(),
+                        message: err.message,
+                        stack: err.cause,
+                        data: None,
+                    },
                 ),
             },
-            Error::NoInvokeFunctionResponseError => (
-                StatusCode::INTERNAL_SERVER_ERROR,
+            Error::NoInvokeFunctionResponseError => call_error_response(
                 headers,
-                Json(json!("No invoke response")),
-            ),
-            _ => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                headers,
-                Json(json!("NOT IMPLEMENTED")),
+                false,
+                None,
+                StepError::new("NoInvokeFunctionResponseError", "No invoke response"),
             ),
+            Error::Interrupt(flow) => call_error_response(
+                headers,
+                StatusCode::INTERNAL_SERVER_ERROR,
+                false,
+                None,
+                StepError::new(
+                    "FlowControlError",
+                    format!("Unhandled flow control error: {:?}", flow.variant),
+                ),
+            ),
+            // No other variants exist today, but keep all call errors on the spec shape.
         }
         .into_response()
     }
 }
 
+fn call_error_response(
+    mut headers: HeaderMap,
+    status: StatusCode,
+    no_retry: bool,
+    retry_after: Option<HeaderValue>,
+    body: StepError,
+) -> (StatusCode, HeaderMap, Json<Value>) {
+    headers.insert(
+        header::INNGEST_NO_RETRY,
+        HeaderValue::from_static(if no_retry { "true" } else { "false" }),
+    );
+
+    if let Some(retry_after) = retry_after {
+        headers.insert(header::RETRY_AFTER, retry_after);
+    }
+
+    (status, headers, Json(json!(body)))
+}
+
+/// A serializable error payload returned to Inngest on failed calls.
 #[derive(Serialize, Debug, Clone)]
 pub struct StepError {
     pub name: String,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stack: Option<String>,
     // not part of the spec but it's used in the Go SDK to deserialize into the original user error
     #[serde(skip_serializing)]
     pub data: Option<serde_json::Value>,
 }
 
+impl StepError {
+    fn new(name: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            message: message.into(),
+            stack: None,
+            data: None,
+        }
+    }
+}
+
+/// A retriable developer error that asks Inngest to delay the next attempt.
 pub struct RetryAfterError {
     pub message: String,
     pub after: Duration,
@@ -221,6 +280,7 @@ impl Debug for RetryAfterError {
     }
 }
 
+/// A non-retriable developer error that should fail the run immediately.
 pub struct NonRetryableError {
     pub message: String,
     pub cause: Option<String>,
@@ -240,5 +300,100 @@ impl Debug for NonRetryableError {
         };
 
         write!(f, "Error: {}\nNo retry\nCause: {}", &self.message, &cause)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+    use hyper::body::to_bytes;
+
+    async fn response_json(response: axum::response::Response) -> Value {
+        let body = to_bytes(response.into_body())
+            .await
+            .expect("response body should be readable");
+        serde_json::from_slice(&body).expect("response body should be valid json")
+    }
+
+    #[tokio::test]
+    async fn basic_errors_are_retriable_and_use_spec_shape() {
+        let response = Error::Dev(DevError::Basic("boom".to_string())).into_response();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            response.headers().get(header::INNGEST_SDK).unwrap(),
+            HeaderValue::from_str(&version::sdk()).unwrap()
+        );
+        assert_eq!(
+            response.headers().get(header::INNGEST_REQ_VERSION).unwrap(),
+            HeaderValue::from_static(EXECUTION_VERSION)
+        );
+        assert_eq!(
+            response.headers().get(header::INNGEST_NO_RETRY).unwrap(),
+            HeaderValue::from_static("false")
+        );
+
+        assert_eq!(
+            response_json(response).await,
+            json!({
+                "name": "Error",
+                "message": "boom"
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn non_retryable_errors_return_bad_request() {
+        let response = Error::Dev(DevError::NoRetry(NonRetryableError {
+            message: "stop".to_string(),
+            cause: Some("because".to_string()),
+        }))
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers().get(header::INNGEST_NO_RETRY).unwrap(),
+            HeaderValue::from_static("true")
+        );
+        assert!(response.headers().get(header::RETRY_AFTER).is_none());
+
+        assert_eq!(
+            response_json(response).await,
+            json!({
+                "name": "NonRetryableError",
+                "message": "stop",
+                "stack": "because"
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_after_errors_preserve_retry_after_header() {
+        let response = Error::Dev(DevError::RetryAt(RetryAfterError {
+            message: "try later".to_string(),
+            after: Duration::from_secs(42),
+            cause: Some("slow dependency".to_string()),
+        }))
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            response.headers().get(header::INNGEST_NO_RETRY).unwrap(),
+            HeaderValue::from_static("false")
+        );
+        assert_eq!(
+            response.headers().get(header::RETRY_AFTER).unwrap(),
+            HeaderValue::from_static("42")
+        );
+
+        assert_eq!(
+            response_json(response).await,
+            json!({
+                "name": "RetryAfterError",
+                "message": "try later",
+                "stack": "slow dependency"
+            })
+        );
     }
 }

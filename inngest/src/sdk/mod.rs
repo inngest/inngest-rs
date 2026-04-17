@@ -1,4 +1,5 @@
 use crate::function::Function;
+use crate::version;
 
 use serde::{Deserialize, Serialize};
 use std::default::Default;
@@ -18,14 +19,12 @@ pub(crate) struct Request {
 
 impl Default for Request {
     fn default() -> Self {
-        let version = env!("CARGO_PKG_VERSION");
-
         Request {
             app_name: "RustDev".to_string(),
             deploy_type: "ping".to_string(),
             url: String::new(),
-            v: "1".to_string(),
-            sdk: format!("rust:v{}", version),
+            v: version::SYNC_VERSION.to_string(),
+            sdk: version::sdk(),
             framework: "rust".to_string(),
             functions: vec![],
         }
