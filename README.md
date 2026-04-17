@@ -59,17 +59,19 @@ inngest = "0.1"
 
 ```rs
 use axum::{
-  routing::{get, put},
+  routing::get,
   Router
 };
+use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() {
     let client = Inngest::new("rust-app");
     let mut inngest_handler = Handler::new(&client);
     inngest_handler.register_fns(vec![
-         hello_fn(&client)
-     ]);
+         hello_fn(&client).into(),
+         step_run_fn(&client).into(),
+    ]);
 
     let inngest_state = Arc::new(inngest_handler);
 
@@ -77,30 +79,35 @@ async fn main() {
         .route("/", get(|| async { "OK!\n" }))
         .route(
             "/api/inngest",
-            put(serve::axum::register).post(serve::axum::invoke),
+            get(serve::axum::introspect)
+                .put(serve::axum::register)
+                .post(serve::axum::invoke),
         )
         .with_state(inngest_state);
 
-    let addr = "[::]:3000".parse::<std::net::SocketAddr>().unwrap();
+    let listener = TcpListener::bind("[::]:3000").await.unwrap();
 
-    // run it with hyper on localhost:3000
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
+    axum::serve(listener, app.into_make_service())
         .await
         .unwrap();
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)]
-enum Data {
-    Hello { msg: String },
+struct HelloEventData {
+    msg: String,
 }
 
-fn hello_fn(client: &Inngest) -> ServableFn<Data, Error> {
+#[derive(Serialize, Deserialize, Debug)]
+struct StepRunEventData {
+    name: String,
+    data: u8,
+}
+
+fn hello_fn(client: &Inngest) -> ServableFn<HelloEventData, Error> {
     client.create_function(
         FunctionOpts::new("hello-func").name("Hello func"),
         Trigger::event("test/hello"),
-        |input: Input<Data>, step: StepTool| async move {
+        |input: Input<HelloEventData>, step: StepTool| async move {
             let step_res = into_dev_result!(
                 step.run("fallible-step-function", || async move {
                     // if even, fail
@@ -130,4 +137,16 @@ fn hello_fn(client: &Inngest) -> ServableFn<Data, Error> {
         },
     )
 }
+
+fn step_run_fn(client: &Inngest) -> ServableFn<StepRunEventData, Error> {
+    client.create_function(
+        FunctionOpts::new("step-run").name("Step run"),
+        Trigger::event("test/step-run"),
+        |_input: Input<StepRunEventData>, _step: StepTool| async move {
+            Ok(json!({ "step": true }))
+        },
+    )
+}
 ```
+
+The handler can register functions with different event payload types on the same app. When batching them with `register_fns(...)`, convert each function with `.into()` as shown above.
