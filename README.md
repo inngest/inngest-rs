@@ -44,7 +44,6 @@ If there are other frameworks you like to see, feel free to submit an issue, or 
 | Retry controls        | :white_check_mark: |
 | Middleware            | :x:                |
 | Connect               | :x:                |
-| AgentKit              | :x:                |
 
 ## Getting Started
 
