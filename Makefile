@@ -10,6 +10,10 @@ send-events:
 test:
 	cargo test
 
+.PHONY: test-e2e
+test-e2e:
+	./scripts/run-e2e-tests.sh
+
 .PHONY: lint
 lint:
 	cargo clippy
