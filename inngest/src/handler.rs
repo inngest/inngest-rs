@@ -1,17 +1,18 @@
-use std::{collections::HashMap, fmt::Debug, panic::AssertUnwindSafe};
+use std::{collections::HashMap, panic::AssertUnwindSafe, sync::Arc};
 
-use futures::FutureExt;
+use futures::{future::BoxFuture, FutureExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha1::Digest;
 use sha2::Sha256;
+use slug::slugify;
 
 use crate::{
     basic_error,
     client::{self, Inngest},
     config::Config,
-    event::Event,
-    function::{Function, Input, InputCtx, ServableFn},
+    event::{Event, InngestEvent},
+    function::{Function, FunctionOpts, Input, InputCtx, ServableFn, Trigger},
     header::Headers,
     result::{Error, FlowControlVariant, SdkResponse},
     sdk::Request,
@@ -19,13 +20,201 @@ use crate::{
     step_tool::Step as StepTool,
 };
 
-pub struct Handler<T: 'static, E> {
+type DynamicFn =
+    dyn Fn(String, Value) -> BoxFuture<'static, Result<SdkResponse, Error>> + Send + Sync + 'static;
+
+struct DynamicServableFn {
+    app_id: String,
+    opts: FunctionOpts,
+    trigger: Trigger,
+    func: Box<DynamicFn>,
+}
+
+impl DynamicServableFn {
+    fn slug(&self) -> String {
+        format!("{}-{}", &self.app_id, slugify(self.opts.id.clone()))
+    }
+
+    fn function(&self, serve_origin: &str, serve_path: &str) -> Function {
+        let id = self.slug();
+        let name = match self.opts.name.clone() {
+            Some(name) => name,
+            None => id.clone(),
+        };
+
+        let mut steps = HashMap::new();
+        steps.insert(
+            "step".to_string(),
+            crate::function::Step {
+                id: "step".to_string(),
+                name: "step".to_string(),
+                runtime: crate::function::StepRuntime {
+                    url: format!("{}{}?fnId={}&step=step", serve_origin, serve_path, &id),
+                    method: "http".to_string(),
+                },
+                retries: crate::function::StepRetry {
+                    attempts: self.opts.retries,
+                },
+            },
+        );
+
+        Function {
+            id,
+            name,
+            triggers: vec![self.trigger.clone()],
+            steps,
+        }
+    }
+
+    async fn run(&self, fn_id: String, body: Value) -> Result<SdkResponse, Error> {
+        (self.func)(fn_id, body).await
+    }
+}
+
+/// A type-erased function registration used by [`Handler::register_fns`].
+///
+/// Convert a [`ServableFn`] into a `RegisteredFn` with `.into()` when batching
+/// functions that use different event payload or error types.
+pub struct RegisteredFn(DynamicServableFn);
+
+impl RegisteredFn {
+    fn into_dynamic(self) -> DynamicServableFn {
+        self.0
+    }
+}
+
+impl<T, E> From<ServableFn<T, E>> for DynamicServableFn
+where
+    T: InngestEvent + Send,
+    E: Into<Error> + 'static,
+{
+    fn from(func: ServableFn<T, E>) -> Self {
+        let ServableFn {
+            app_id,
+            opts,
+            trigger,
+            func,
+        } = func;
+        let func = Arc::new(func);
+
+        Self {
+            app_id,
+            opts,
+            trigger,
+            func: Box::new(move |fn_id, body| {
+                let step_func = Arc::clone(&func);
+
+                async move {
+                    let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
+                        Ok(res) => res,
+                        Err(err) => {
+                            println!("ERROR: {:?}", err);
+                            println!("BODY: {:#?}", &body);
+                            let msg = basic_error!("error parsing run request: {}", err);
+                            return Err(msg);
+                        }
+                    };
+
+                    let _ = data._use_api;
+
+                    let input = Input {
+                        event: data.event,
+                        events: data.events,
+                        ctx: InputCtx {
+                            env: data.ctx.env.clone(),
+                            fn_id,
+                            run_id: data.ctx.run_id.clone(),
+                            step_id: "step".to_string(),
+                            attempt: data.ctx.attempt,
+                        },
+                    };
+
+                    let step_tool = StepTool::new(&data.steps);
+
+                    match std::panic::catch_unwind(AssertUnwindSafe(|| {
+                        (step_func.as_ref())(input, step_tool.clone())
+                    })) {
+                        Ok(fut) => match AssertUnwindSafe(fut).catch_unwind().await {
+                            Ok(v) => match v {
+                                Ok(v) => Ok(SdkResponse {
+                                    status: 200,
+                                    body: v,
+                                }),
+                                Err(err) => match err.into() {
+                                    Error::Interrupt(mut flow) => {
+                                        flow.acknowledge();
+                                        match flow.variant {
+                                            FlowControlVariant::StepGenerator => {
+                                                let (status, body) = if step_tool.error().is_some() {
+                                                    match serde_json::to_value(step_tool.error()) {
+                                                        Ok(v) => (500, v),
+                                                        Err(err) => {
+                                                            return Err(basic_error!(
+                                                                "error seralizing step error: {}",
+                                                                err
+                                                            ));
+                                                        }
+                                                    }
+                                                } else if !step_tool.genop().is_empty() {
+                                                    match serde_json::to_value(step_tool.genop()) {
+                                                        Ok(v) => (206, v),
+                                                        Err(err) => {
+                                                            return Err(basic_error!(
+                                                                "error serializing step response: {}",
+                                                                err
+                                                            ));
+                                                        }
+                                                    }
+                                                } else {
+                                                    (206, json!("null"))
+                                                };
+                                                Ok(SdkResponse { status, body })
+                                            }
+                                        }
+                                    }
+                                    other => Err(other),
+                                },
+                            },
+                            Err(panic_err) => Ok(SdkResponse {
+                                status: 500,
+                                body: Value::String(format!("panic: {:?}", panic_err)),
+                            }),
+                        },
+                        Err(panic_err) => Ok(SdkResponse {
+                            status: 500,
+                            body: Value::String(format!("panic: {:?}", panic_err)),
+                        }),
+                    }
+                }
+                .boxed()
+            }),
+        }
+    }
+}
+
+impl<T, E> From<ServableFn<T, E>> for RegisteredFn
+where
+    T: InngestEvent + Send,
+    E: Into<Error> + 'static,
+{
+    fn from(func: ServableFn<T, E>) -> Self {
+        Self(DynamicServableFn::from(func))
+    }
+}
+
+/// An Inngest app handler that serves registered functions over HTTP.
+///
+/// A single handler can register functions with different event payload types.
+/// Use [`Handler::register_fn`] for one function at a time, or
+/// [`Handler::register_fns`] together with [`RegisteredFn`] to batch mixed
+/// function types.
+pub struct Handler {
     inngest: Inngest,
     signing_key: Option<String>,
     // TODO: signing_key_fallback
     serve_origin: Option<String>,
     serve_path: Option<String>,
-    funcs: HashMap<String, ServableFn<T, E>>,
+    funcs: HashMap<String, DynamicServableFn>,
     mode: Kind,
 }
 
@@ -41,7 +230,8 @@ pub struct SyncQueryParams {
     deploy_id: Option<String>,
 }
 
-impl<T, E> Handler<T, E> {
+impl Handler {
+    /// Creates a new handler for the given Inngest client.
     pub fn new(client: &Inngest) -> Self {
         let signing_key = Config::signing_key();
         let serve_origin = Config::serve_origin();
@@ -67,28 +257,55 @@ impl<T, E> Handler<T, E> {
         }
     }
 
+    /// Overrides the signing key used to verify inbound requests.
     pub fn signing_key(mut self, key: &str) -> Self {
         self.signing_key = Some(key.to_string());
         self
     }
 
+    /// Overrides the public origin used when syncing function URLs.
     pub fn serve_origin(mut self, origin: &str) -> Self {
         self.serve_origin = Some(origin.to_string());
         self
     }
 
+    /// Overrides the public path used when syncing function URLs.
     pub fn serve_path(mut self, path: &str) -> Self {
         self.serve_path = Some(path.to_string());
         self
     }
 
-    pub fn register_fn(&mut self, func: ServableFn<T, E>) {
+    /// Registers a single function with the handler.
+    ///
+    /// This is the simplest option when adding one function at a time,
+    /// regardless of its event payload type.
+    pub fn register_fn<T, E>(&mut self, func: ServableFn<T, E>)
+    where
+        T: InngestEvent + Send,
+        E: Into<Error> + 'static,
+    {
+        let func = DynamicServableFn::from(func);
         self.funcs.insert(func.slug(), func);
     }
 
-    pub fn register_fns(&mut self, funcs: Vec<ServableFn<T, E>>) {
+    /// Registers multiple functions with the handler.
+    ///
+    /// This accepts any iterator of [`RegisteredFn`], which allows batching
+    /// heterogeneous functions:
+    ///
+    /// ```ignore
+    /// handler.register_fns(vec![
+    ///     hello_fn(&client).into(),
+    ///     step_run_fn(&client).into(),
+    /// ]);
+    /// ```
+    pub fn register_fns<I>(&mut self, funcs: I)
+    where
+        I: IntoIterator<Item = RegisteredFn>,
+    {
         for f in funcs {
-            self.funcs.insert(f.slug(), f);
+            let func = f.into_dynamic();
+            self.funcs.insert(func.slug(), func);
         }
     }
 
@@ -125,7 +342,7 @@ impl<T, E> Handler<T, E> {
             ));
         };
 
-        let signature = Signature::new(&key).sig(&sig).body(raw_body);
+        let signature = Signature::new(&key).sig(sig).body(raw_body);
         signature.verify(false)
     }
 
@@ -145,7 +362,7 @@ impl<T, E> Handler<T, E> {
         let mut authentication_succeeded: Option<bool> = None;
 
         match self.mode {
-            Kind::Dev => Ok(IntrospectResult::Unauthenticated(
+            Kind::Dev => Ok(IntrospectResult::Unauthenticated(Box::new(
                 IntrospectUnauthedResult {
                     authentication_succeeded,
                     extra: None,
@@ -156,11 +373,11 @@ impl<T, E> Handler<T, E> {
                     mode: Kind::Dev,
                     schema_version,
                 },
-            )),
+            ))),
 
             Kind::Cloud => {
                 if let Some(sig) = headers.signature() {
-                    if let Ok(_) = self.verify_signature(&sig, raw_body) {
+                    if self.verify_signature(&sig, raw_body).is_ok() {
                         let api_origin = match self.inngest.api_origin.clone() {
                             Some(origin) => origin,
                             None => client::API_ORIGIN.to_string(),
@@ -173,42 +390,41 @@ impl<T, E> Handler<T, E> {
 
                         let event_key_hash = self.hash_key(self.inngest.event_key.clone());
                         let signing_key_hash = if let Some(key) = self.signing_key.clone() {
-                            match Signature::new(&key).hash() {
-                                Ok(hash) => Some(hash),
-                                Err(_) => None,
-                            }
+                            Signature::new(&key).hash().ok()
                         } else {
                             None
                         };
 
-                        return Ok(IntrospectResult::Authenticated(IntrospectAuthedResult {
-                            app_id: self.inngest.app_id(),
-                            api_origin,
-                            event_api_origin,
-                            event_key_hash,
-                            authentication_succeeded: true,
-                            env: None, // TODO
-                            extra: None,
-                            framework: framework.to_string(),
-                            function_count,
-                            has_event_key,
-                            has_signing_key,
-                            has_signing_key_fallback,
-                            mode: Kind::Cloud,
-                            schema_version,
-                            sdk_language: "rust".to_string(),
-                            sdk_version: env!("CARGO_PKG_VERSION").to_string(),
-                            serve_origin: self.serve_origin.clone(),
-                            serve_path: self.serve_path.clone(),
-                            signing_key_hash,
-                            signing_key_fallback_hash: None, // TODO
-                        }));
+                        return Ok(IntrospectResult::Authenticated(Box::new(
+                            IntrospectAuthedResult {
+                                app_id: self.inngest.app_id(),
+                                api_origin,
+                                event_api_origin,
+                                event_key_hash,
+                                authentication_succeeded: true,
+                                env: None, // TODO
+                                extra: None,
+                                framework: framework.to_string(),
+                                function_count,
+                                has_event_key,
+                                has_signing_key,
+                                has_signing_key_fallback,
+                                mode: Kind::Cloud,
+                                schema_version,
+                                sdk_language: "rust".to_string(),
+                                sdk_version: env!("CARGO_PKG_VERSION").to_string(),
+                                serve_origin: self.serve_origin.clone(),
+                                serve_path: self.serve_path.clone(),
+                                signing_key_hash,
+                                signing_key_fallback_hash: None, // TODO
+                            },
+                        )));
                     };
                     // mark it as false
                     authentication_succeeded = Some(false);
                 }
 
-                Ok(IntrospectResult::Unauthenticated(
+                Ok(IntrospectResult::Unauthenticated(Box::new(
                     IntrospectUnauthedResult {
                         authentication_succeeded,
                         extra: None,
@@ -219,7 +435,7 @@ impl<T, E> Handler<T, E> {
                         mode: Kind::Cloud,
                         schema_version,
                     },
-                ))
+                )))
             }
         }
     }
@@ -250,8 +466,8 @@ impl<T, E> Handler<T, E> {
         let app_id = self.inngest.app_id();
         let functions: Vec<Function> = self
             .funcs
-            .iter()
-            .map(|(_, f)| f.function(&self.app_serve_origin(headers), &self.app_serve_path()))
+            .values()
+            .map(|f| f.function(&self.app_serve_origin(headers), &self.app_serve_path()))
             .collect();
 
         Request {
@@ -284,7 +500,7 @@ impl<T, E> Handler<T, E> {
             .json(&req);
 
         if let Some(key) = &self.signing_key {
-            let sig = Signature::new(&key);
+            let sig = Signature::new(key);
             match sig.hash() {
                 Ok(hashed) => {
                     sync_req = sync_req.header("authorization", format!("Bearer {}", hashed));
@@ -302,19 +518,14 @@ impl<T, E> Handler<T, E> {
         match sync_req.send().await {
             Ok(resp) => match resp.json::<InngestSyncSuccess>().await {
                 Ok(res) => {
-                    let modified = match res.modified.clone() {
-                        None => false,
-                        Some(v) => v,
-                    };
+                    let modified: bool = res.modified.unwrap_or_default();
 
-                    Ok(SyncResponse::OutOfBand(OutOfBandSyncResponse {
+                    Ok(SyncResponse::OutOfBand(Box::new(OutOfBandSyncResponse {
                         message: "Successfully synced.".to_string(),
                         modified,
-                    }))
+                    })))
                 }
-                Err(_) => {
-                    return Err("error parsing sync response".to_string());
-                }
+                Err(_) => Err("error parsing sync response".to_string()),
             },
             Err(err) => {
                 println!("ERROR: {:?}", err);
@@ -330,11 +541,7 @@ impl<T, E> Handler<T, E> {
         query: &RunQueryParams,
         raw_body: &str,
         body: &Value,
-    ) -> Result<SdkResponse, Error>
-    where
-        T: for<'de> Deserialize<'de> + Debug,
-        E: Into<Error>,
-    {
+    ) -> Result<SdkResponse, Error> {
         let sig = headers.signature();
         let kind = headers.server_kind();
         if kind == Kind::Cloud && sig.is_none() {
@@ -343,22 +550,8 @@ impl<T, E> Handler<T, E> {
 
         // Verify the signature if provided
         if let Some(sig) = sig.clone() {
-            _ = self.verify_signature(&sig, raw_body)?;
+            self.verify_signature(&sig, raw_body)?;
         }
-
-        let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
-            Ok(res) => res,
-            Err(err) => {
-                println!("ERROR: {:?}", err);
-                println!("BODY: {:#?}", &body);
-                // TODO: need to surface this error better
-                let msg = basic_error!("error parsing run request: {}", err);
-                return Err(msg);
-            }
-        };
-
-        // TODO: retrieve data from API on flag
-        if data.use_api {}
 
         // find the specified function
         let Some(func) = self.funcs.get(&query.fn_id) else {
@@ -368,78 +561,7 @@ impl<T, E> Handler<T, E> {
             ));
         };
 
-        let input = Input {
-            event: data.event,
-            events: data.events,
-            ctx: InputCtx {
-                env: data.ctx.env.clone(),
-                fn_id: query.fn_id.clone(),
-                run_id: data.ctx.run_id.clone(),
-                step_id: "step".to_string(),
-                attempt: data.ctx.attempt,
-            },
-        };
-
-        let step_tool = StepTool::new(&data.steps);
-
-        match std::panic::catch_unwind(AssertUnwindSafe(|| (func.func)(input, step_tool.clone()))) {
-            Ok(fut) => {
-                match AssertUnwindSafe(fut).catch_unwind().await {
-                    Ok(v) => match v {
-                        Ok(v) => Ok(SdkResponse {
-                            status: 200,
-                            body: v,
-                        }),
-                        Err(err) => match err.into() {
-                            Error::Interrupt(mut flow) => {
-                                flow.acknowledge();
-                                match flow.variant {
-                                    FlowControlVariant::StepGenerator => {
-                                        let (status, body) = if step_tool.error().is_some() {
-                                            match serde_json::to_value(&step_tool.error()) {
-                                                Ok(v) => {
-                                                    // TODO: check current attempts and see if it can retry or not
-                                                    (500, v)
-                                                }
-                                                Err(err) => {
-                                                    return Err(basic_error!(
-                                                        "error seralizing step error: {}",
-                                                        err
-                                                    ));
-                                                }
-                                            }
-                                        } else if step_tool.genop().len() > 0 {
-                                            // TODO: only expecting one for now, will need to handle multiple
-                                            match serde_json::to_value(&step_tool.genop()) {
-                                                Ok(v) => (206, v),
-                                                Err(err) => {
-                                                    return Err(basic_error!(
-                                                        "error serializing step response: {}",
-                                                        err
-                                                    ));
-                                                }
-                                            }
-                                        } else {
-                                            (206, json!("null"))
-                                        };
-                                        Ok(SdkResponse { status, body })
-                                    }
-                                }
-                            }
-                            other => Err(other),
-                        },
-                    },
-                    Err(panic_err) => Ok(SdkResponse {
-                        status: 500,
-                        body: Value::String(format!("panic: {:?}", panic_err)),
-                    }),
-                }
-            }
-            Err(panic_err) => Ok(SdkResponse {
-                status: 500,
-                body: Value::String(format!("panic: {:?}", panic_err)),
-            }),
-        }
+        func.run(query.fn_id.clone(), body.clone()).await
     }
     // run the function
 }
@@ -449,7 +571,8 @@ struct RunRequestBody<T: 'static> {
     ctx: RunRequestCtx,
     event: Event<T>,
     events: Vec<Event<T>>,
-    use_api: bool,
+    #[serde(rename = "use_api")]
+    _use_api: bool,
     steps: HashMap<String, Option<Value>>,
     // version: i32,
 }
@@ -465,12 +588,6 @@ struct RunRequestCtx {
     // stack: RunRequestCtxStack,
 }
 
-#[derive(Deserialize, Debug)]
-struct RunRequestCtxStack {
-    // current: u32,
-    // stack: Vec<String>,
-}
-
 #[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -483,8 +600,8 @@ const PROBE_SCHEMA_VERSION: &str = "2024-05-24";
 #[derive(Serialize)]
 #[serde(untagged)]
 pub enum IntrospectResult {
-    Unauthenticated(IntrospectUnauthedResult),
-    Authenticated(IntrospectAuthedResult),
+    Unauthenticated(Box<IntrospectUnauthedResult>),
+    Authenticated(Box<IntrospectAuthedResult>),
 }
 
 #[derive(Serialize)]
@@ -525,8 +642,8 @@ pub struct IntrospectAuthedResult {
 
 #[derive(Serialize)]
 pub enum SyncResponse {
-    InBand(InBandSyncResponse),
-    OutOfBand(OutOfBandSyncResponse),
+    InBand(Box<InBandSyncResponse>),
+    OutOfBand(Box<OutOfBandSyncResponse>),
 }
 
 #[derive(Serialize)]
@@ -547,13 +664,281 @@ pub struct OutOfBandSyncResponse {
     modified: bool,
 }
 
-#[derive(Deserialize)]
-pub struct InngestSyncError {
-    error: String,
-}
-
 #[derive(Deserialize, Debug)]
 pub struct InngestSyncSuccess {
-    ok: bool,
+    #[serde(rename = "ok")]
+    _ok: bool,
     modified: Option<bool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::function::ServableFn;
+    use axum::http::HeaderMap;
+    use serde::{Deserialize, Serialize};
+    use std::collections::HashSet;
+
+    #[derive(Debug, Deserialize, Serialize)]
+    struct FirstEvent {
+        message: String,
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    struct SecondEvent {
+        count: u32,
+    }
+
+    #[tokio::test]
+    async fn handler_dispatches_functions_with_different_event_types() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let first_fn: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first"),
+            Trigger::event("test/first"),
+            |input: Input<FirstEvent>, _step| async move {
+                Ok(json!({ "message": input.event.data.message }))
+            },
+        );
+        let first_fn_id = first_fn.slug();
+
+        let second_fn: ServableFn<SecondEvent, Error> = client.create_function(
+            FunctionOpts::new("second"),
+            Trigger::event("test/second"),
+            |input: Input<SecondEvent>, _step| async move {
+                Ok(json!({ "count": input.event.data.count }))
+            },
+        );
+        let second_fn_id = second_fn.slug();
+
+        handler.register_fns(vec![first_fn.into(), second_fn.into()]);
+
+        let headers = Headers::from(HeaderMap::new());
+
+        let first_body = json!({
+            "ctx": { "attempt": 1, "env": "test", "run_id": "run-1" },
+            "event": {
+                "id": null,
+                "name": "test/first",
+                "data": { "message": "hello" },
+                "ts": null,
+                "v": null
+            },
+            "events": [],
+            "use_api": false,
+            "steps": {}
+        });
+        let first_response = handler
+            .run(
+                &headers,
+                &RunQueryParams { fn_id: first_fn_id },
+                &first_body.to_string(),
+                &first_body,
+            )
+            .await
+            .expect("first function should run");
+        assert_eq!(first_response.status, 200);
+        assert_eq!(first_response.body, json!({ "message": "hello" }));
+
+        let second_body = json!({
+            "ctx": { "attempt": 1, "env": "test", "run_id": "run-2" },
+            "event": {
+                "id": null,
+                "name": "test/second",
+                "data": { "count": 42 },
+                "ts": null,
+                "v": null
+            },
+            "events": [],
+            "use_api": false,
+            "steps": {}
+        });
+        let second_response = handler
+            .run(
+                &headers,
+                &RunQueryParams {
+                    fn_id: second_fn_id,
+                },
+                &second_body.to_string(),
+                &second_body,
+            )
+            .await
+            .expect("second function should run");
+        assert_eq!(second_response.status, 200);
+        assert_eq!(second_response.body, json!({ "count": 42 }));
+    }
+
+    #[tokio::test]
+    async fn handler_dispatches_functions_registered_via_mixed_apis() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let first_fn: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first"),
+            Trigger::event("test/first"),
+            |input: Input<FirstEvent>, _step| async move {
+                Ok(json!({ "message": input.event.data.message }))
+            },
+        );
+        let first_fn_id = first_fn.slug();
+        handler.register_fn(first_fn);
+
+        let second_fn: ServableFn<SecondEvent, Error> = client.create_function(
+            FunctionOpts::new("second"),
+            Trigger::event("test/second"),
+            |input: Input<SecondEvent>, _step| async move {
+                Ok(json!({ "count": input.event.data.count }))
+            },
+        );
+        let second_fn_id = second_fn.slug();
+        handler.register_fns(vec![second_fn.into()]);
+
+        let headers = Headers::from(HeaderMap::new());
+
+        let first_response = handler
+            .run(
+                &headers,
+                &RunQueryParams { fn_id: first_fn_id },
+                &event_body("test/first", json!({ "message": "hello" })).to_string(),
+                &event_body("test/first", json!({ "message": "hello" })),
+            )
+            .await
+            .expect("first function should run");
+        assert_eq!(first_response.body, json!({ "message": "hello" }));
+
+        let second_response = handler
+            .run(
+                &headers,
+                &RunQueryParams {
+                    fn_id: second_fn_id,
+                },
+                &event_body("test/second", json!({ "count": 42 })).to_string(),
+                &event_body("test/second", json!({ "count": 42 })),
+            )
+            .await
+            .expect("second function should run");
+        assert_eq!(second_response.body, json!({ "count": 42 }));
+    }
+
+    #[tokio::test]
+    async fn handler_returns_error_for_unknown_function_id() {
+        let client = Inngest::new("test-app");
+        let handler = Handler::new(&client);
+        let headers = Headers::from(HeaderMap::new());
+        let body = event_body("test/first", json!({ "message": "hello" }));
+
+        let error = match handler
+            .run(
+                &headers,
+                &RunQueryParams {
+                    fn_id: "test-app-missing".to_string(),
+                },
+                &body.to_string(),
+                &body,
+            )
+            .await
+        {
+            Ok(_) => panic!("missing function id should fail"),
+            Err(error) => error,
+        };
+
+        match error {
+            Error::Dev(crate::result::DevError::Basic(message)) => {
+                assert!(message.contains("no function registered as ID"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn handler_returns_error_for_mismatched_event_payload() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let first_fn: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first"),
+            Trigger::event("test/first"),
+            |input: Input<FirstEvent>, _step| async move {
+                Ok(json!({ "message": input.event.data.message }))
+            },
+        );
+        let first_fn_id = first_fn.slug();
+        handler.register_fn(first_fn);
+
+        let headers = Headers::from(HeaderMap::new());
+        let body = event_body("test/first", json!({ "count": 42 }));
+
+        let error = match handler
+            .run(
+                &headers,
+                &RunQueryParams { fn_id: first_fn_id },
+                &body.to_string(),
+                &body,
+            )
+            .await
+        {
+            Ok(_) => panic!("mismatched payload should fail"),
+            Err(error) => error,
+        };
+
+        match error {
+            Error::Dev(crate::result::DevError::Basic(message)) => {
+                assert!(message.contains("error parsing run request"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sync_payload_includes_all_registered_functions() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let first_fn: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first"),
+            Trigger::event("test/first"),
+            |input: Input<FirstEvent>, _step| async move {
+                Ok(json!({ "message": input.event.data.message }))
+            },
+        );
+        let second_fn: ServableFn<SecondEvent, Error> = client.create_function(
+            FunctionOpts::new("second"),
+            Trigger::event("test/second"),
+            |input: Input<SecondEvent>, _step| async move {
+                Ok(json!({ "count": input.event.data.count }))
+            },
+        );
+
+        handler.register_fns(vec![first_fn.into(), second_fn.into()]);
+
+        let payload = handler.sync_payload(&Headers::from(HeaderMap::new()), "axum");
+        let function_ids: HashSet<String> = payload
+            .functions
+            .into_iter()
+            .map(|function| function.id)
+            .collect();
+
+        assert_eq!(payload.app_name, "test-app");
+        assert_eq!(payload.framework, "axum");
+        assert_eq!(function_ids.len(), 2);
+        assert!(function_ids.contains("test-app-first"));
+        assert!(function_ids.contains("test-app-second"));
+    }
+
+    fn event_body(name: &str, data: Value) -> Value {
+        json!({
+            "ctx": { "attempt": 1, "env": "test", "run_id": "run-1" },
+            "event": {
+                "id": null,
+                "name": name,
+                "data": data,
+                "ts": null,
+                "v": null
+            },
+            "events": [],
+            "use_api": false,
+            "steps": {}
+        })
+    }
 }

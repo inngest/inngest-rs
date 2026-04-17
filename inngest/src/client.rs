@@ -163,7 +163,7 @@ impl Inngest {
     }
 
     fn inngest_evt_api_key(&self) -> String {
-        if let Some(_) = self.dev.clone() {
+        if self.dev.is_some() {
             return "test".to_string();
         }
 

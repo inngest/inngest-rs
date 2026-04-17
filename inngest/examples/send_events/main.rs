@@ -7,12 +7,6 @@ struct Data {
     bar: u8,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct TestEvent<T> {
-    name: String,
-    data: T,
-}
-
 #[tokio::main]
 async fn main() {
     let client = Inngest::new("send-events").event_key("yolo");
