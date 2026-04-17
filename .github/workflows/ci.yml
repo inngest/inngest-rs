@@ -102,10 +102,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: DeterminateSystems/nix-installer-action@v22
+      - name: Initialize Nix dev shell
+        run: nix develop -c true
       - name: Run e2e tests
-        run: |
-          nix develop -c cargo test -p inngest \
-            --test send_event_e2e \
-            --test wait_for_event_e2e \
-            --test invoke_e2e \
-            -- --test-threads=1
+        run: nix develop -c make test-e2e
