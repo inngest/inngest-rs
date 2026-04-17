@@ -11,27 +11,47 @@
 - SHA-1 step hashing
 - Repeated step ID indexing
 - Memoized `{ data }` and `{ error }` handling
-- Deterministic step lookup behavior
+- Wait/sleep and wait-for-event non-wrapped memoization shapes
+- Targeted `stepId` lookup behavior for hashed step execution
+- `ctx.use_api` memoized-step decoding parity
+- Deterministic step lookup behavior, including stack-ordered memoization and recovery
 
 ** Checklist
 - [ ] Fix repeated-step indexing so the first occurrence hashes the bare ID
 - [ ] Ensure repeated occurrences hash `id:1`, `id:2`, and so on
 - [ ] Confirm hash output format stays hex-encoded SHA-1
+- [ ] Count repeated IDs by prior step discovery, not only by prior reporting
 - [ ] Replace the current raw-value memoization assumptions with spec-shaped decoding
 - [ ] Decode memoized run results from `{ data }` or `{ error }`
 - [ ] Decode memoized invoke results from `{ data }` or `{ error }`
 - [ ] Preserve wait/sleep handling for `null` memoized values
+- [ ] Decode successful wait-for-event memoization from the raw event payload shape
 - [ ] Represent memoized step errors in a structured internal type
+- [ ] Preserve original serialized memoized step errors when surfaced back to Inngest
+- [ ] Mark unhandled memoized step errors as non-retriable
 - [ ] Ensure memoized steps are never re-reported
+- [ ] Apply the same memoization decoding rules to inline `steps` payloads and `ctx.use_api` fetched step state
+- [ ] Ensure targeted step execution finds the requested hashed step or returns `StepNotFound`
+- [ ] Follow `ctx.stack.stack` ordering when memoizing prior steps
+- [ ] Warn and fall back to earliest-match recovery when stack-ordered memoization cannot be satisfied
 - [ ] Add unit tests for step hashing and repeated IDs
 - [ ] Add unit tests for memoized success and error decoding
+- [ ] Add unit tests for wait-for-event raw payload and `null` timeout decoding
+- [ ] Add unit tests for `ctx.use_api` memoization parity
+- [ ] Add unit tests for targeted `stepId` lookup and `StepNotFound`
+- [ ] Add unit tests for stack-ordered memoization and recovery fallback
+- [ ] Add an e2e test for repeated step IDs replaying with distinct memoized results
+- [ ] Add an e2e test for memoized step-error replay without rerunning the failed step body
+- [ ] Add an e2e test for invoke failure replay and memoized error surfacing
+- [ ] Add an e2e test for durable multi-event send replay returning all emitted IDs
+- [ ] Add an e2e test for `sleep_until` resume behavior
 
 ** Exit Criteria
 - [ ] Step IDs are stable and spec-correct across repeated executions
-- [ ] Memoized step state is interpreted consistently across supported step types
-- [ ] Tests cover the hashing and memoization invariants
+- [ ] Memoized step state is interpreted consistently across supported step types and sources
+- [ ] Targeted hashed-step execution is deterministic and spec-correct
+- [ ] Tests cover hashing, memoization, targeted lookup, stack-order recovery, and key e2e replay invariants
 
 ** Out of Scope
 - Step planning
 - Parallel execution
-- Stack-based recovery
