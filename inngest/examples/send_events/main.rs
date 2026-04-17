@@ -17,12 +17,12 @@ async fn main() {
     let evts: Vec<&Event<Data>> = vec![&evt, &evt2];
 
     match client.send_event(&evt).await {
-        Ok(_) => println!("Success"),
-        Err(_) => println!("Error"),
+        Ok(response) => println!("Success: {:?}", response.ids),
+        Err(err) => println!("Error: {:?}", err),
     }
 
     match client.send_events(evts.as_slice()).await {
-        Ok(_) => println!("List success"),
-        Err(_) => println!("List error"),
+        Ok(response) => println!("List success: {:?}", response.ids),
+        Err(err) => println!("List error: {:?}", err),
     }
 }

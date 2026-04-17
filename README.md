@@ -38,7 +38,7 @@ If there are other frameworks you like to see, feel free to submit an issue, or 
 | `step.sleep`          | :white_check_mark: |
 | `step.wait_for_event` | :white_check_mark: |
 | `step.invoke`         | :white_check_mark: |
-| `step.send_event`     | :x:                |
+| `step.send_event`     | :white_check_mark: |
 | CancelOn              | :x:                |
 | Failure handler       | :x:                |
 | Retry controls        | :white_check_mark: |
