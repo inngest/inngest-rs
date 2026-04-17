@@ -81,6 +81,10 @@ jobs:
     # needs: [build]
     steps:
       - uses: actions/checkout@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - name: Cache
         uses: actions/cache@v3
         with:
@@ -94,5 +98,14 @@ jobs:
         with:
           toolchain: stable
           override: true
+      - name: Install Inngest CLI shim
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          cat > "$HOME/.local/bin/inngest" <<'EOF'
+          #!/usr/bin/env bash
+          exec npx --yes inngest-cli@latest "$@"
+          EOF
+          chmod +x "$HOME/.local/bin/inngest"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Test
         run: cargo test
