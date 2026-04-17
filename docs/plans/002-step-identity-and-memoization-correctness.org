@@ -1,0 +1,37 @@
+#+AUTHOR: Darwin D. Wu
+#+DATE: 2026-04-16
+#+STATUS: Draft
+
+* Milestone 002: Step Identity and Memoization Correctness
+
+** Goal
+- Make step IDs, hashing, and memoized step decoding match the spec exactly.
+
+** Scope
+- SHA-1 step hashing
+- Repeated step ID indexing
+- Memoized `{ data }` and `{ error }` handling
+- Deterministic step lookup behavior
+
+** Checklist
+- [ ] Fix repeated-step indexing so the first occurrence hashes the bare ID
+- [ ] Ensure repeated occurrences hash `id:1`, `id:2`, and so on
+- [ ] Confirm hash output format stays hex-encoded SHA-1
+- [ ] Replace the current raw-value memoization assumptions with spec-shaped decoding
+- [ ] Decode memoized run results from `{ data }` or `{ error }`
+- [ ] Decode memoized invoke results from `{ data }` or `{ error }`
+- [ ] Preserve wait/sleep handling for `null` memoized values
+- [ ] Represent memoized step errors in a structured internal type
+- [ ] Ensure memoized steps are never re-reported
+- [ ] Add unit tests for step hashing and repeated IDs
+- [ ] Add unit tests for memoized success and error decoding
+
+** Exit Criteria
+- [ ] Step IDs are stable and spec-correct across repeated executions
+- [ ] Memoized step state is interpreted consistently across supported step types
+- [ ] Tests cover the hashing and memoization invariants
+
+** Out of Scope
+- Step planning
+- Parallel execution
+- Stack-based recovery

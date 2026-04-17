@@ -1,0 +1,37 @@
+#+AUTHOR: Darwin D. Wu
+#+DATE: 2026-04-16
+#+STATUS: Draft
+
+* Milestone 005: Stack Recovery and Parallelism
+
+** Goal
+- Add ordered memoization, recovery behavior, and multi-step planning support.
+
+** Scope
+- `ctx.stack.stack` ordering
+- Recovery when step order cannot be matched
+- Parallel step reporting
+- `disable_immediate_execution` semantics
+
+** Checklist
+- [ ] Use `ctx.stack.stack` ordering while memoizing previous steps
+- [ ] Detect when the expected next step cannot be found
+- [ ] Surface a warning path for changed or non-deterministic functions
+- [ ] Implement recovery logic that falls back to earliest-available matching steps
+- [ ] Support reporting multiple new steps in a single call request
+- [ ] Ensure subsequent requests honor `disable_immediate_execution=true`
+- [ ] Force `StepPlanned` behavior when the spec requires it after parallel discovery
+- [ ] Add tests for ordered memoization
+- [ ] Add tests for recovery when code shape changes mid-run
+- [ ] Add tests for parallel step discovery
+- [ ] Add tests for `disable_immediate_execution` behavior
+
+** Exit Criteria
+- [ ] Parallel step discovery is supported in a spec-compatible way
+- [ ] The SDK can recover from stack mismatches without corrupting state
+- [ ] Deterministic ordering assumptions are enforced by tests
+
+** Out of Scope
+- Expanded function configuration
+- Middleware
+- Checkpointing

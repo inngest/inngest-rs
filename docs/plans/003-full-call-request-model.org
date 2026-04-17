@@ -1,0 +1,39 @@
+#+AUTHOR: Darwin D. Wu
+#+DATE: 2026-04-16
+#+STATUS: Draft
+
+* Milestone 003: Full Call Request Model
+
+** Goal
+- Support the complete spec-defined call request payload and the required API fetch path for trimmed payloads.
+
+** Scope
+- Request parsing
+- `stepId` routing
+- `ctx.disable_immediate_execution`
+- `ctx.stack`
+- `ctx.use_api` full-payload fetches
+
+** Checklist
+- [ ] Parse `stepId` from query parameters
+- [ ] Parse `ctx.disable_immediate_execution`
+- [ ] Parse `ctx.stack.current` and `ctx.stack.stack`
+- [ ] Parse `ctx.use_api` from the spec-defined location
+- [ ] Parse any additional call context needed for later milestones
+- [ ] Implement event batch retrieval from `/v0/runs/:run_id/batch`
+- [ ] Implement memoized step retrieval from `/v0/runs/:run_id/actions`
+- [ ] Authenticate those API calls with the correct signing key
+- [ ] Apply fallback signing key behavior to those API calls
+- [ ] Replace request body data with fetched data when `use_api` is true
+- [ ] Fail the call request with `500` when either fetch fails
+- [ ] Add tests for raw request parsing
+- [ ] Add tests for `use_api` fetch success and failure paths
+
+** Exit Criteria
+- [ ] The handler understands the full call-request shape required by the spec
+- [ ] Trimmed payload requests work by fetching data from the API
+- [ ] `stepId`, `disable_immediate_execution`, and stack data are available to later execution logic
+
+** Out of Scope
+- Full targeted step execution
+- Parallel planning behavior
