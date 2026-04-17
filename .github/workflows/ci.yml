@@ -95,7 +95,7 @@ jobs:
           toolchain: stable
           override: true
       - name: Test
-        run: cargo test -p inngest --lib
+        run: make test-unit
 
   e2e:
     runs-on: ubuntu-latest
