@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use axum::Router;
 use inngest::{client::Inngest, handler::Handler, serve};
 use serde::Deserialize;
