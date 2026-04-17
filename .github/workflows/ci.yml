@@ -81,10 +81,6 @@ jobs:
     # needs: [build]
     steps:
       - uses: actions/checkout@v3
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
       - name: Cache
         uses: actions/cache@v3
         with:
@@ -98,14 +94,18 @@ jobs:
         with:
           toolchain: stable
           override: true
-      - name: Install Inngest CLI shim
-        run: |
-          mkdir -p "$HOME/.local/bin"
-          cat > "$HOME/.local/bin/inngest" <<'EOF'
-          #!/usr/bin/env bash
-          exec npx --yes inngest-cli@latest "$@"
-          EOF
-          chmod +x "$HOME/.local/bin/inngest"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Test
-        run: cargo test
+        run: cargo test -p inngest --lib
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: DeterminateSystems/nix-installer-action@v22
+      - name: Run e2e tests
+        run: |
+          nix develop -c cargo test -p inngest \
+            --test send_event_e2e \
+            --test wait_for_event_e2e \
+            --test invoke_e2e \
+            -- --test-threads=1
