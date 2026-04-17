@@ -34,11 +34,11 @@ impl Headers {
     }
 
     pub fn signature(&self) -> Option<String> {
-        self.0.get(INNGEST_SIGNATURE).map(|v| v.clone())
+        self.0.get(INNGEST_SIGNATURE).cloned()
     }
 
     pub fn host(&self) -> Option<String> {
-        self.0.get(HOST).map(|v| v.clone())
+        self.0.get(HOST).cloned()
     }
 }
 

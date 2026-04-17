@@ -130,7 +130,7 @@ impl Signature {
     fn sign(&self, unix_ts: i64, signing_key: &str, body: &str) -> Result<String, Error> {
         let key = self.normalize_key(signing_key);
         let mut mac =
-            HmacSha256::new_from_slice(&key.as_bytes()).expect("HMAC can take key of any size");
+            HmacSha256::new_from_slice(key.as_bytes()).expect("HMAC can take key of any size");
         mac.update(format!("{}{}", body, unix_ts).as_bytes());
 
         let sum = mac.finalize();

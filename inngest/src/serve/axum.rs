@@ -59,7 +59,7 @@ impl IntoResponse for SdkResponse {
         );
         headers.insert(
             header::INNGEST_FRAMEWORK,
-            HeaderValue::from_static(&FRAMEWORK),
+            HeaderValue::from_static(FRAMEWORK),
         );
         headers.insert(
             header::INNGEST_SDK,
@@ -86,7 +86,7 @@ impl IntoResponse for SyncResponse {
         );
         headers.insert(
             header::INNGEST_FRAMEWORK,
-            HeaderValue::from_static(&FRAMEWORK),
+            HeaderValue::from_static(FRAMEWORK),
         );
         headers.insert(
             header::INNGEST_SDK,
@@ -107,7 +107,7 @@ impl IntoResponse for IntrospectResult {
         );
         headers.insert(
             header::INNGEST_FRAMEWORK,
-            HeaderValue::from_static(&FRAMEWORK),
+            HeaderValue::from_static(FRAMEWORK),
         );
         headers.insert(
             header::INNGEST_SDK,

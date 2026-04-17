@@ -103,7 +103,7 @@ where
                         }
                     };
 
-                    if data.use_api {}
+                    let _ = data._use_api;
 
                     let input = Input {
                         event: data.event,
@@ -134,7 +134,7 @@ where
                                         match flow.variant {
                                             FlowControlVariant::StepGenerator => {
                                                 let (status, body) = if step_tool.error().is_some() {
-                                                    match serde_json::to_value(&step_tool.error()) {
+                                                    match serde_json::to_value(step_tool.error()) {
                                                         Ok(v) => (500, v),
                                                         Err(err) => {
                                                             return Err(basic_error!(
@@ -143,8 +143,8 @@ where
                                                             ));
                                                         }
                                                     }
-                                                } else if step_tool.genop().len() > 0 {
-                                                    match serde_json::to_value(&step_tool.genop()) {
+                                                } else if !step_tool.genop().is_empty() {
+                                                    match serde_json::to_value(step_tool.genop()) {
                                                         Ok(v) => (206, v),
                                                         Err(err) => {
                                                             return Err(basic_error!(
@@ -295,7 +295,7 @@ impl Handler {
             ));
         };
 
-        let signature = Signature::new(&key).sig(&sig).body(raw_body);
+        let signature = Signature::new(&key).sig(sig).body(raw_body);
         signature.verify(false)
     }
 
@@ -315,7 +315,7 @@ impl Handler {
         let mut authentication_succeeded: Option<bool> = None;
 
         match self.mode {
-            Kind::Dev => Ok(IntrospectResult::Unauthenticated(
+            Kind::Dev => Ok(IntrospectResult::Unauthenticated(Box::new(
                 IntrospectUnauthedResult {
                     authentication_succeeded,
                     extra: None,
@@ -326,11 +326,11 @@ impl Handler {
                     mode: Kind::Dev,
                     schema_version,
                 },
-            )),
+            ))),
 
             Kind::Cloud => {
                 if let Some(sig) = headers.signature() {
-                    if let Ok(_) = self.verify_signature(&sig, raw_body) {
+                    if self.verify_signature(&sig, raw_body).is_ok() {
                         let api_origin = match self.inngest.api_origin.clone() {
                             Some(origin) => origin,
                             None => client::API_ORIGIN.to_string(),
@@ -343,42 +343,41 @@ impl Handler {
 
                         let event_key_hash = self.hash_key(self.inngest.event_key.clone());
                         let signing_key_hash = if let Some(key) = self.signing_key.clone() {
-                            match Signature::new(&key).hash() {
-                                Ok(hash) => Some(hash),
-                                Err(_) => None,
-                            }
+                            Signature::new(&key).hash().ok()
                         } else {
                             None
                         };
 
-                        return Ok(IntrospectResult::Authenticated(IntrospectAuthedResult {
-                            app_id: self.inngest.app_id(),
-                            api_origin,
-                            event_api_origin,
-                            event_key_hash,
-                            authentication_succeeded: true,
-                            env: None, // TODO
-                            extra: None,
-                            framework: framework.to_string(),
-                            function_count,
-                            has_event_key,
-                            has_signing_key,
-                            has_signing_key_fallback,
-                            mode: Kind::Cloud,
-                            schema_version,
-                            sdk_language: "rust".to_string(),
-                            sdk_version: env!("CARGO_PKG_VERSION").to_string(),
-                            serve_origin: self.serve_origin.clone(),
-                            serve_path: self.serve_path.clone(),
-                            signing_key_hash,
-                            signing_key_fallback_hash: None, // TODO
-                        }));
+                        return Ok(IntrospectResult::Authenticated(Box::new(
+                            IntrospectAuthedResult {
+                                app_id: self.inngest.app_id(),
+                                api_origin,
+                                event_api_origin,
+                                event_key_hash,
+                                authentication_succeeded: true,
+                                env: None, // TODO
+                                extra: None,
+                                framework: framework.to_string(),
+                                function_count,
+                                has_event_key,
+                                has_signing_key,
+                                has_signing_key_fallback,
+                                mode: Kind::Cloud,
+                                schema_version,
+                                sdk_language: "rust".to_string(),
+                                sdk_version: env!("CARGO_PKG_VERSION").to_string(),
+                                serve_origin: self.serve_origin.clone(),
+                                serve_path: self.serve_path.clone(),
+                                signing_key_hash,
+                                signing_key_fallback_hash: None, // TODO
+                            },
+                        )));
                     };
                     // mark it as false
                     authentication_succeeded = Some(false);
                 }
 
-                Ok(IntrospectResult::Unauthenticated(
+                Ok(IntrospectResult::Unauthenticated(Box::new(
                     IntrospectUnauthedResult {
                         authentication_succeeded,
                         extra: None,
@@ -389,7 +388,7 @@ impl Handler {
                         mode: Kind::Cloud,
                         schema_version,
                     },
-                ))
+                )))
             }
         }
     }
@@ -420,8 +419,8 @@ impl Handler {
         let app_id = self.inngest.app_id();
         let functions: Vec<Function> = self
             .funcs
-            .iter()
-            .map(|(_, f)| f.function(&self.app_serve_origin(headers), &self.app_serve_path()))
+            .values()
+            .map(|f| f.function(&self.app_serve_origin(headers), &self.app_serve_path()))
             .collect();
 
         Request {
@@ -454,7 +453,7 @@ impl Handler {
             .json(&req);
 
         if let Some(key) = &self.signing_key {
-            let sig = Signature::new(&key);
+            let sig = Signature::new(key);
             match sig.hash() {
                 Ok(hashed) => {
                     sync_req = sync_req.header("authorization", format!("Bearer {}", hashed));
@@ -472,19 +471,14 @@ impl Handler {
         match sync_req.send().await {
             Ok(resp) => match resp.json::<InngestSyncSuccess>().await {
                 Ok(res) => {
-                    let modified = match res.modified.clone() {
-                        None => false,
-                        Some(v) => v,
-                    };
+                    let modified: bool = res.modified.unwrap_or_default();
 
-                    Ok(SyncResponse::OutOfBand(OutOfBandSyncResponse {
+                    Ok(SyncResponse::OutOfBand(Box::new(OutOfBandSyncResponse {
                         message: "Successfully synced.".to_string(),
                         modified,
-                    }))
+                    })))
                 }
-                Err(_) => {
-                    return Err("error parsing sync response".to_string());
-                }
+                Err(_) => Err("error parsing sync response".to_string()),
             },
             Err(err) => {
                 println!("ERROR: {:?}", err);
@@ -509,7 +503,7 @@ impl Handler {
 
         // Verify the signature if provided
         if let Some(sig) = sig.clone() {
-            _ = self.verify_signature(&sig, raw_body)?;
+            self.verify_signature(&sig, raw_body)?;
         }
 
         // find the specified function
@@ -530,7 +524,8 @@ struct RunRequestBody<T: 'static> {
     ctx: RunRequestCtx,
     event: Event<T>,
     events: Vec<Event<T>>,
-    use_api: bool,
+    #[serde(rename = "use_api")]
+    _use_api: bool,
     steps: HashMap<String, Option<Value>>,
     // version: i32,
 }
@@ -546,12 +541,6 @@ struct RunRequestCtx {
     // stack: RunRequestCtxStack,
 }
 
-#[derive(Deserialize, Debug)]
-struct RunRequestCtxStack {
-    // current: u32,
-    // stack: Vec<String>,
-}
-
 #[derive(Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
@@ -564,8 +553,8 @@ const PROBE_SCHEMA_VERSION: &str = "2024-05-24";
 #[derive(Serialize)]
 #[serde(untagged)]
 pub enum IntrospectResult {
-    Unauthenticated(IntrospectUnauthedResult),
-    Authenticated(IntrospectAuthedResult),
+    Unauthenticated(Box<IntrospectUnauthedResult>),
+    Authenticated(Box<IntrospectAuthedResult>),
 }
 
 #[derive(Serialize)]
@@ -606,8 +595,8 @@ pub struct IntrospectAuthedResult {
 
 #[derive(Serialize)]
 pub enum SyncResponse {
-    InBand(InBandSyncResponse),
-    OutOfBand(OutOfBandSyncResponse),
+    InBand(Box<InBandSyncResponse>),
+    OutOfBand(Box<OutOfBandSyncResponse>),
 }
 
 #[derive(Serialize)]
@@ -628,14 +617,10 @@ pub struct OutOfBandSyncResponse {
     modified: bool,
 }
 
-#[derive(Deserialize)]
-pub struct InngestSyncError {
-    error: String,
-}
-
 #[derive(Deserialize, Debug)]
 pub struct InngestSyncSuccess {
-    ok: bool,
+    #[serde(rename = "ok")]
+    _ok: bool,
     modified: Option<bool>,
 }
 
