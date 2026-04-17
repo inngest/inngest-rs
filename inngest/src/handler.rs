@@ -71,6 +71,10 @@ impl DynamicServableFn {
     }
 }
 
+/// A type-erased function registration used by [`Handler::register_fns`].
+///
+/// Convert a [`ServableFn`] into a `RegisteredFn` with `.into()` when batching
+/// functions that use different event payload or error types.
 pub struct RegisteredFn(DynamicServableFn);
 
 impl RegisteredFn {
@@ -198,6 +202,12 @@ where
     }
 }
 
+/// An Inngest app handler that serves registered functions over HTTP.
+///
+/// A single handler can register functions with different event payload types.
+/// Use [`Handler::register_fn`] for one function at a time, or
+/// [`Handler::register_fns`] together with [`RegisteredFn`] to batch mixed
+/// function types.
 pub struct Handler {
     inngest: Inngest,
     signing_key: Option<String>,
@@ -221,6 +231,7 @@ pub struct SyncQueryParams {
 }
 
 impl Handler {
+    /// Creates a new handler for the given Inngest client.
     pub fn new(client: &Inngest) -> Self {
         let signing_key = Config::signing_key();
         let serve_origin = Config::serve_origin();
@@ -246,21 +257,28 @@ impl Handler {
         }
     }
 
+    /// Overrides the signing key used to verify inbound requests.
     pub fn signing_key(mut self, key: &str) -> Self {
         self.signing_key = Some(key.to_string());
         self
     }
 
+    /// Overrides the public origin used when syncing function URLs.
     pub fn serve_origin(mut self, origin: &str) -> Self {
         self.serve_origin = Some(origin.to_string());
         self
     }
 
+    /// Overrides the public path used when syncing function URLs.
     pub fn serve_path(mut self, path: &str) -> Self {
         self.serve_path = Some(path.to_string());
         self
     }
 
+    /// Registers a single function with the handler.
+    ///
+    /// This is the simplest option when adding one function at a time,
+    /// regardless of its event payload type.
     pub fn register_fn<T, E>(&mut self, func: ServableFn<T, E>)
     where
         T: InngestEvent + Send,
@@ -270,6 +288,17 @@ impl Handler {
         self.funcs.insert(func.slug(), func);
     }
 
+    /// Registers multiple functions with the handler.
+    ///
+    /// This accepts any iterator of [`RegisteredFn`], which allows batching
+    /// heterogeneous functions:
+    ///
+    /// ```ignore
+    /// handler.register_fns(vec![
+    ///     hello_fn(&client).into(),
+    ///     step_run_fn(&client).into(),
+    /// ]);
+    /// ```
     pub fn register_fns<I>(&mut self, funcs: I)
     where
         I: IntoIterator<Item = RegisteredFn>,
