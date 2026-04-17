@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     error::Error as StdError,
+    fmt::{Display, Formatter},
     future::Future,
     time::{self, Duration, SystemTime},
 };
@@ -13,8 +14,9 @@ use state::State;
 
 use crate::{
     basic_error,
+    client::Inngest,
     event::{Event, InngestEvent},
-    result::{Error, FlowControlError, StepError},
+    result::{DevError, Error, FlowControlError, StepError},
     utils::duration,
 };
 
@@ -115,6 +117,7 @@ mod state {
 
 #[derive(Clone)]
 pub struct Step {
+    client: Inngest,
     state: state::State,
 }
 
@@ -133,8 +136,10 @@ impl<E> UserProvidedError<'_> for E where
 }
 
 impl Step {
-    pub fn new(state: &HashMap<String, Option<Value>>) -> Self {
+    /// Creates a step helper for the current function execution.
+    pub(crate) fn new(client: Inngest, state: &HashMap<String, Option<Value>>) -> Self {
         Step {
+            client,
             state: State::new(state),
         }
     }
@@ -387,8 +392,30 @@ impl Step {
         }
     }
 
-    // TODO: send_event
-    // TODO: send_events
+    /// Sends one event durably and returns the emitted event IDs.
+    pub async fn send_event<T: InngestEvent>(
+        &self,
+        id: &str,
+        evt: Event<T>,
+    ) -> Result<Vec<String>, Error> {
+        self.send_events(id, vec![evt]).await
+    }
+
+    /// Sends multiple events durably and returns the emitted event IDs.
+    pub async fn send_events<T: InngestEvent>(
+        &self,
+        id: &str,
+        evts: Vec<Event<T>>,
+    ) -> Result<Vec<String>, Error> {
+        let client = self.client.clone();
+        self.run(id, || async move {
+            client
+                .send_owned_events_with_ids(evts.as_slice())
+                .await
+                .map_err(StepSendEventError::from)
+        })
+        .await
+    }
 }
 
 pub struct WaitForEventOpts {
@@ -401,6 +428,37 @@ pub struct InvokeFunctionOpts {
     pub function_id: String,
     pub data: Value,
     pub timeout: Option<Duration>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct StepSendEventError {
+    message: String,
+}
+
+impl Display for StepSendEventError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl StdError for StepSendEventError {}
+
+impl From<DevError> for StepSendEventError {
+    fn from(err: DevError) -> Self {
+        let message = match err {
+            DevError::Basic(message) => message,
+            DevError::RetryAt(err) => err.to_string(),
+            DevError::NoRetry(err) => err.to_string(),
+        };
+
+        Self { message }
+    }
+}
+
+impl From<StepSendEventError> for Error {
+    fn from(err: StepSendEventError) -> Self {
+        Error::Dev(DevError::Basic(err.message))
+    }
 }
 
 struct Op {
@@ -428,6 +486,27 @@ impl Op {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::Inngest;
+    use axum::{extract::State, response::IntoResponse, routing::post, Json, Router};
+    use serde_json::json;
+    use std::{
+        net::TcpListener,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc, Mutex,
+        },
+    };
+
+    #[derive(Clone, Default)]
+    struct EventApiState {
+        requests: Arc<AtomicUsize>,
+        bodies: Arc<Mutex<Vec<Value>>>,
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    struct TestEventData {
+        value: String,
+    }
 
     #[test]
     fn test_op_hash() {
@@ -447,5 +526,144 @@ mod tests {
         };
 
         assert_eq!(op.hash(), "20A9BB9477C4AC565CF084D1614C58BBF0A523FF");
+    }
+
+    #[tokio::test]
+    async fn send_event_emits_step_run_and_reuses_memoized_result() {
+        let server = spawn_event_api().await;
+        let client = Inngest::new("test-app")
+            .event_api_origin(&server.url)
+            .event_key("test-key");
+        let step = Step::new(client.clone(), &HashMap::new());
+
+        let first = step
+            .send_event(
+                "send-test",
+                Event::new(
+                    "test/send",
+                    TestEventData {
+                        value: "hello".to_string(),
+                    },
+                ),
+            )
+            .await;
+
+        match first {
+            Err(Error::Interrupt(mut flow)) => flow.acknowledge(),
+            other => panic!("expected step interruption, got {other:?}"),
+        }
+
+        assert_eq!(server.state.requests.load(Ordering::SeqCst), 1);
+        assert_eq!(step.genop().len(), 1);
+        assert_eq!(step.genop()[0].data, Some(json!(["evt-1"])));
+
+        let stored = HashMap::from([(
+            step.genop()[0].id.clone(),
+            Some(json!({ "data": ["evt-1"] })),
+        )]);
+        let memoized_step = Step::new(client, &stored);
+        let second = memoized_step
+            .send_event(
+                "send-test",
+                Event::new(
+                    "test/send",
+                    TestEventData {
+                        value: "ignored".to_string(),
+                    },
+                ),
+            )
+            .await
+            .expect("memoized step should return stored IDs");
+
+        assert_eq!(second, vec!["evt-1".to_string()]);
+        assert_eq!(server.state.requests.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn send_events_posts_an_array_payload() {
+        let server = spawn_event_api().await;
+        let client = Inngest::new("test-app")
+            .event_api_origin(&server.url)
+            .event_key("test-key");
+        let step = Step::new(client, &HashMap::new());
+
+        let result = step
+            .send_events(
+                "send-many",
+                vec![
+                    Event::new(
+                        "test/send.first",
+                        TestEventData {
+                            value: "first".to_string(),
+                        },
+                    ),
+                    Event::new(
+                        "test/send.second",
+                        TestEventData {
+                            value: "second".to_string(),
+                        },
+                    ),
+                ],
+            )
+            .await;
+
+        match result {
+            Err(Error::Interrupt(mut flow)) => flow.acknowledge(),
+            other => panic!("expected step interruption, got {other:?}"),
+        }
+
+        assert_eq!(step.genop()[0].data, Some(json!(["evt-1", "evt-2"])));
+
+        let bodies = server.state.bodies.lock().unwrap();
+        assert_eq!(bodies.len(), 1);
+        assert!(bodies[0].is_array());
+        assert_eq!(bodies[0].as_array().unwrap().len(), 2);
+    }
+
+    struct TestServer {
+        state: EventApiState,
+        url: String,
+    }
+
+    async fn spawn_event_api() -> TestServer {
+        async fn ingest(
+            State(state): State<EventApiState>,
+            Json(body): Json<Value>,
+        ) -> impl IntoResponse {
+            state.requests.fetch_add(1, Ordering::SeqCst);
+            state.bodies.lock().unwrap().push(body.clone());
+
+            let ids = match body {
+                Value::Array(ref events) => (1..=events.len())
+                    .map(|idx| format!("evt-{}", idx))
+                    .collect::<Vec<_>>(),
+                _ => vec!["evt-1".to_string()],
+            };
+
+            Json(json!({
+                "ids": ids,
+                "status": 200
+            }))
+        }
+
+        let state = EventApiState::default();
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
+        let addr = listener.local_addr().expect("listener addr should exist");
+        let app = Router::new()
+            .route("/e/:event_key", post(ingest))
+            .with_state(state.clone());
+
+        tokio::spawn(async move {
+            axum::Server::from_tcp(listener)
+                .expect("server should bind")
+                .serve(app.into_make_service())
+                .await
+                .expect("server should serve");
+        });
+
+        TestServer {
+            state,
+            url: format!("http://{}", addr),
+        }
     }
 }
