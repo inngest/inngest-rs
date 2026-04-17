@@ -5,7 +5,7 @@ authors = ["Inngest Engineering <eng@inngest.com>"]
 edition = "2021"
 description = "Inngest Rusk SDK"
 license-file = "LICENSE"
-readme = "../README.md"
+readme = "README.md"
 homepage = "https://github.com/inngest/inngest-rs"
 repository = "https://github.com/inngest/inngest-rs"
 

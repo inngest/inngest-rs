@@ -1,0 +1,38 @@
+#+AUTHOR: Darwin D. Wu
+#+DATE: 2026-04-16
+#+STATUS: Draft
+
+* Milestone 001: Signature and Mode Hardening
+
+** Goal
+- Make cloud/dev mode handling and request authentication spec-correct and deterministic.
+
+** Scope
+- Mode selection
+- Signature verification rules
+- Signing key fallback support
+- Introspection auth metadata
+
+** Checklist
+- [ ] Stop deriving effective mode from incoming server headers
+- [ ] Use SDK configuration and environment to decide cloud vs dev behavior
+- [ ] Enforce signature presence for cloud mode requests
+- [ ] Allow missing signatures in dev mode while still validating when a signature is present
+- [ ] Add support for `INNGEST_SIGNING_KEY_FALLBACK`
+- [ ] Try the fallback signing key when primary verification fails
+- [ ] Reuse fallback behavior for outbound authenticated API calls
+- [ ] Report fallback signing key presence in introspection responses
+- [ ] Report fallback signing key hash in authenticated introspection responses
+- [ ] Populate introspection `env` when available
+- [ ] Add tests for cloud/dev verification behavior
+- [ ] Add tests for primary-key and fallback-key verification paths
+
+** Exit Criteria
+- [ ] Incoming request verification is driven by configured mode, not request headers
+- [ ] Fallback key logic works for both verification and outbound auth
+- [ ] Introspection accurately reports auth-related state
+
+** Out of Scope
+- Full call-request execution semantics
+- Middleware
+- Connect

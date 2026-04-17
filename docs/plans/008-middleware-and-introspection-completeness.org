@@ -1,0 +1,40 @@
+#+AUTHOR: Darwin D. Wu
+#+DATE: 2026-04-16
+#+STATUS: Draft
+
+* Milestone 008: Middleware and Introspection Completeness
+
+** Goal
+- Add middleware hooks and finish the introspection surface so the SDK reports its capabilities accurately.
+
+** Scope
+- Client middleware
+- Function middleware
+- Event send lifecycle hooks
+- Introspection capability reporting
+
+** Checklist
+- [ ] Define an idiomatic Rust middleware API for client-level middleware
+- [ ] Define an idiomatic Rust middleware API for function-level middleware
+- [ ] Implement the required function-run lifecycle ordering
+- [ ] Add transform-input hooks
+- [ ] Add after-memoization hooks where supported
+- [ ] Add before-execution hooks
+- [ ] Add after-execution hooks
+- [ ] Add transform-output hooks
+- [ ] Add before-response hooks where supported
+- [ ] Add event-send lifecycle hooks
+- [ ] Allow middleware to mutate context, memoized step data, output, errors, and outbound events
+- [ ] Populate introspection `capabilities`
+- [ ] Report supported capability versions for any shipped advanced features
+- [ ] Add tests for middleware ordering and mutation points
+- [ ] Add tests for authenticated and unauthenticated introspection responses
+
+** Exit Criteria
+- [ ] Middleware exists with the required lifecycle guarantees
+- [ ] Introspection accurately reflects the SDK’s supported capabilities and environment state
+- [ ] Middleware and introspection behavior are test-covered
+
+** Out of Scope
+- Connect implementation details
+- Checkpoint transport

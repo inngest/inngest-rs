@@ -4,28 +4,45 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      rust-overlay,
+      ...
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = import nixpkgs {
           inherit system;
           config.allowUnfree = true;
+          overlays = [ rust-overlay.overlays.default ];
         };
 
-      in {
+        rustToolchain = pkgs.rust-bin.stable."1.94.0".default.override {
+          extensions = [
+            "rust-src"
+            "rust-analyzer"
+            "clippy"
+            "rustfmt"
+          ];
+        };
+      in
+      {
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
-            rustc
-            rustup
-            rustfmt
-            cargo
-            clippy
+            rustToolchain
 
             # tools
             git-cliff
-            claude-code
 
             # deps
             pkg-config
@@ -33,11 +50,11 @@
 
             # LSP
             rust-analyzer
-            nodePackages.yaml-language-server
+            yaml-language-server
           ];
 
-          RUST_SRC_PATH =
-            "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
+          RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
         };
-      });
+      }
+    );
 }
