@@ -44,11 +44,7 @@ impl Inngest {
         let event_api_origin = Config::event_api_origin();
         let event_key = Config::event_key();
         let env = Config::env();
-        // if the value is a URL, use it. otherwise set a default URL
-        let dev = Config::dev().map(|v| match Url::parse(&v) {
-            Ok(val) => val.to_string(),
-            Err(_) => API_ORIGIN_DEV.to_string(),
-        });
+        let dev = Config::dev().and_then(|v| Self::normalize_dev_value(&v));
 
         Inngest {
             id: id.to_string(),
@@ -86,12 +82,16 @@ impl Inngest {
     }
 
     pub fn dev(mut self, dev: &str) -> Self {
-        let url = match Url::parse(dev) {
-            Ok(val) => Some(val.to_string()),
-            Err(_) => Some(API_ORIGIN_DEV.to_string()),
-        };
-        self.dev = url;
+        self.dev = Self::normalize_dev_value(dev).or_else(|| Some(API_ORIGIN_DEV.to_string()));
         self
+    }
+
+    pub(crate) fn mode(&self) -> Kind {
+        if self.dev.is_some() {
+            Kind::Dev
+        } else {
+            Kind::Cloud
+        }
     }
 
     pub fn create_function<
@@ -204,7 +204,7 @@ impl Inngest {
         }
     }
 
-    pub(crate) fn inngest_api_origin(&self, kind: Kind) -> String {
+    pub(crate) fn inngest_api_origin(&self) -> String {
         if let Some(dev) = self.dev.clone() {
             return dev;
         }
@@ -213,10 +213,49 @@ impl Inngest {
             return endpoint;
         }
 
-        match kind {
+        match self.mode() {
             Kind::Dev => API_ORIGIN_DEV.to_string(),
             Kind::Cloud => API_ORIGIN.to_string(),
         }
+    }
+
+    fn normalize_dev_value(value: &str) -> Option<String> {
+        let value = value.trim();
+        if value.is_empty() || value == "0" {
+            return None;
+        }
+
+        match Url::parse(value) {
+            Ok(val) => Some(val.to_string()),
+            Err(_) => Some(API_ORIGIN_DEV.to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod dev_mode_tests {
+    use super::*;
+
+    #[test]
+    fn normalize_dev_value_treats_zero_as_cloud_mode() {
+        assert_eq!(Inngest::normalize_dev_value("0"), None);
+        assert_eq!(Inngest::normalize_dev_value(""), None);
+    }
+
+    #[test]
+    fn normalize_dev_value_uses_default_dev_origin_for_non_zero_flags() {
+        assert_eq!(
+            Inngest::normalize_dev_value("1"),
+            Some(API_ORIGIN_DEV.to_string())
+        );
+    }
+
+    #[test]
+    fn normalize_dev_value_preserves_explicit_dev_origin() {
+        assert_eq!(
+            Inngest::normalize_dev_value("http://example.com"),
+            Some("http://example.com/".to_string())
+        );
     }
 }
 

@@ -9,7 +9,7 @@ pub(crate) const RETRY_AFTER: &str = "retry-after";
 pub(crate) const HOST: &str = "host";
 
 // Inngest specific ones
-// pub(crate) const INNGEST_ENV: &str = "x-inngest-env";
+pub(crate) const INNGEST_ENV: &str = "x-inngest-env";
 // pub(crate) const INNGEST_EXPECTED_SERVER_KIND: &str = "x-inngest-expected-server-kind";
 pub(crate) const INNGEST_FRAMEWORK: &str = "x-inngest-framework";
 pub(crate) const INNGEST_NO_RETRY: &str = "x-inngest-no-retry";
