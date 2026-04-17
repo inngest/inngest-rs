@@ -34,6 +34,7 @@ struct SendChildEventData {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn step_send_event_triggers_child_function() {
+    // The dev server uses fixed ports, so each e2e test holds the suite-wide lock.
     let _lock = DevServerLock::acquire();
     let _dev_server = DevServer::start().await;
 
@@ -77,8 +78,10 @@ async fn step_send_event_triggers_child_function() {
             let child_event_name = child_event_name_for_parent.clone();
 
             async move {
+                // Capture the parent run so the harness can poll the dev server for completion.
                 *parent_run_state.lock().unwrap() = Some(input.ctx.run_id.clone());
 
+                // `send_event` is durable, so the parent run is interrupted and replayed.
                 let ids = step
                     .send_event(
                         "send-child",
@@ -101,6 +104,7 @@ async fn step_send_event_triggers_child_function() {
     let app = spawn_app(client.clone(), vec![child_fn.into(), parent_fn.into()]).await;
     app.sync().await;
 
+    // Send the parent event through the dev server so the full SDK handshake is exercised.
     client
         .send_event(&Event::new(&parent_event_name, EmptyEventData {}))
         .await
@@ -112,10 +116,12 @@ async fn step_send_event_triggers_child_function() {
     let event_ids = wait_for_state(&sent_event_ids, Duration::from_secs(5)).await;
     assert_eq!(event_ids.len(), 1);
 
+    // The emitted child event should create its own completed run in the dev server.
     let child_runs = wait_for_event_runs(&event_ids[0], Duration::from_secs(10)).await;
     assert!(!child_runs[0].run_id.is_empty());
     assert_eq!(child_runs[0].status, "Completed");
 
+    // The child function should observe the durable event payload produced by the parent.
     let received = wait_for_state(&child_event, Duration::from_secs(10)).await;
     assert_eq!(received.id, event_ids[0]);
     assert_eq!(received.name, child_event_name);

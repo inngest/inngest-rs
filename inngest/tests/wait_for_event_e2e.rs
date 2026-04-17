@@ -28,6 +28,7 @@ struct WaitForEventData {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn wait_for_event_returns_the_fulfilled_event() {
+    // The fixed-port dev server is shared, so keep the e2e suite serialized.
     let _lock = DevServerLock::acquire();
     let _dev_server = DevServer::start().await;
 
@@ -51,8 +52,10 @@ async fn wait_for_event_returns_the_fulfilled_event() {
             let fulfill_event_name = fulfill_event_name_for_wait.clone();
 
             async move {
+                // Store the run ID before the wait step interrupts execution.
                 *run_id_capture.lock().unwrap() = Some(input.ctx.run_id.clone());
 
+                // The run should suspend until a matching event arrives or the timeout elapses.
                 let waited_event = step.wait_for_event::<WaitForEventData>(
                     "wait-for-match",
                     WaitForEventOpts {
@@ -87,6 +90,7 @@ async fn wait_for_event_returns_the_fulfilled_event() {
         .await
         .expect("base event should send successfully");
 
+    // The run should remain active while it is waiting for the second event.
     let run_id = wait_for_state(&run_id_state, Duration::from_secs(5)).await;
     wait_for_run_status(&run_id, "Running", Duration::from_secs(10)).await;
 
@@ -101,6 +105,7 @@ async fn wait_for_event_returns_the_fulfilled_event() {
     let run = wait_for_run_status(&run_id, "Completed", Duration::from_secs(10)).await;
     let waited_event = wait_for_state(&waited_event_state, Duration::from_secs(10)).await;
 
+    // The resumed function should receive the exact event that satisfied the wait expression.
     assert!(!waited_event.id.is_empty());
     assert_eq!(waited_event.value, 42);
     assert_eq!(run.output, json!("fulfilled"));
@@ -108,6 +113,7 @@ async fn wait_for_event_returns_the_fulfilled_event() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn wait_for_event_times_out_without_a_match() {
+    // The fixed-port dev server is shared, so keep the e2e suite serialized.
     let _lock = DevServerLock::acquire();
     let _dev_server = DevServer::start().await;
 
@@ -130,6 +136,7 @@ async fn wait_for_event_times_out_without_a_match() {
             let missing_event_name = missing_event_name.clone();
 
             async move {
+                // Store the run ID before the wait step interrupts execution.
                 *run_id_capture.lock().unwrap() = Some(input.ctx.run_id.clone());
 
                 let waited_event = step.wait_for_event::<WaitForEventData>(
@@ -165,6 +172,7 @@ async fn wait_for_event_times_out_without_a_match() {
     let run_id = wait_for_state(&run_id_state, Duration::from_secs(5)).await;
     let run = wait_for_run_status(&run_id, "Completed", Duration::from_secs(10)).await;
 
+    // A timed-out wait should resume with `None` and let the function decide the fallback output.
     assert!(waited_event_state.lock().unwrap().is_none());
     assert_eq!(run.output, json!("empty"));
 }

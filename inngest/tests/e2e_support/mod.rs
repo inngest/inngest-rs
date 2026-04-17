@@ -40,6 +40,7 @@ pub struct AppServer {
 
 impl AppServer {
     pub async fn sync(&self) {
+        // Sync the SDK app with the dev server after the local axum app is listening.
         let response = reqwest::Client::new()
             .put(format!("{}/api/inngest", self.base_url))
             .send()
@@ -75,6 +76,7 @@ pub struct DevServer {
 
 impl DevServer {
     pub async fn start() -> Self {
+        // Each e2e test owns the single shared dev server while holding the lock below.
         let child = Command::new("inngest")
             .args(["dev", "--no-discovery", "--no-poll", "--port", "8288"])
             .stdin(Stdio::null())
@@ -105,6 +107,7 @@ pub struct DevServerLock {
 
 impl DevServerLock {
     pub fn acquire() -> Self {
+        // The dev server uses fixed ports, so keep the e2e suite serialized.
         let path = std::env::temp_dir().join("inngest-rs-dev-server-e2e.lock");
         let deadline = Instant::now() + Duration::from_secs(30);
 
@@ -131,6 +134,7 @@ impl Drop for DevServerLock {
 }
 
 pub async fn spawn_app(client: Inngest, funcs: Vec<inngest::handler::RegisteredFn>) -> AppServer {
+    // Give each test app its own ephemeral HTTP server and sync only the functions it needs.
     let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
     let addr = listener
         .local_addr()
@@ -165,6 +169,7 @@ pub async fn wait_for_run_status(
     expected_status: &str,
     timeout: Duration,
 ) -> RunRecord {
+    // The dev server updates runs asynchronously, so poll until the desired state appears.
     let deadline = Instant::now() + timeout;
     let mut last_status = None::<String>;
 
@@ -187,6 +192,7 @@ pub async fn wait_for_run_status(
 }
 
 pub async fn wait_for_event_runs(event_id: &str, timeout: Duration) -> Vec<EventRunRecord> {
+    // Child runs may not exist immediately after the parent emits the durable event.
     let deadline = Instant::now() + timeout;
 
     loop {
@@ -205,6 +211,7 @@ pub async fn wait_for_event_runs(event_id: &str, timeout: Duration) -> Vec<Event
 }
 
 pub async fn wait_for_state<T: Clone>(state: &Arc<Mutex<Option<T>>>, timeout: Duration) -> T {
+    // Test functions communicate back to the harness through shared in-memory state.
     let deadline = Instant::now() + timeout;
 
     loop {
@@ -218,6 +225,7 @@ pub async fn wait_for_state<T: Clone>(state: &Arc<Mutex<Option<T>>>, timeout: Du
 }
 
 pub fn unique_name(prefix: &str) -> String {
+    // Reusing names across tests makes dev-server sync confusing, so keep them unique.
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("clock should be after unix epoch")
@@ -227,6 +235,7 @@ pub fn unique_name(prefix: &str) -> String {
 }
 
 async fn wait_for_http_ok(origin: &str, timeout: Duration) {
+    // The CLI can take a moment to boot before its HTTP endpoints are ready.
     let deadline = Instant::now() + timeout;
     let client = reqwest::Client::new();
 
@@ -247,6 +256,7 @@ async fn wait_for_http_ok(origin: &str, timeout: Duration) {
 }
 
 async fn fetch_run(run_id: &str) -> Option<RunRecord> {
+    // Missing runs are normal while the event is still being ingested.
     let response = reqwest::Client::new()
         .get(format!("{DEV_SERVER_ORIGIN}/v1/runs/{run_id}"))
         .send()
@@ -272,6 +282,7 @@ async fn fetch_run(run_id: &str) -> Option<RunRecord> {
 }
 
 async fn fetch_event_runs(event_id: &str) -> Vec<EventRunRecord> {
+    // Child event runs appear only after the durable event has been dispatched.
     let response = reqwest::Client::new()
         .get(format!("{DEV_SERVER_ORIGIN}/v1/events/{event_id}/runs"))
         .send()

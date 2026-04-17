@@ -25,6 +25,7 @@ struct InvokeEventData {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn step_invoke_returns_child_output() {
+    // The dev server uses fixed ports, so each e2e test holds the suite-wide lock.
     let _lock = DevServerLock::acquire();
     let _dev_server = DevServer::start().await;
 
@@ -55,8 +56,10 @@ async fn step_invoke_returns_child_output() {
             let child_fn_id = child_fn_id.clone();
 
             async move {
+                // Capture the parent run before the invoke step interrupts and resumes the function.
                 *parent_run_state.lock().unwrap() = Some(input.ctx.run_id.clone());
 
+                // The dev server returns the child output through the invoke envelope.
                 let result: String = step.invoke(
                     "invoke-child",
                     InvokeFunctionOpts {
@@ -76,6 +79,7 @@ async fn step_invoke_returns_child_output() {
     let app = spawn_app(client.clone(), vec![child_fn.into(), parent_fn.into()]).await;
     app.sync().await;
 
+    // Trigger the parent through the dev server so the invoke path uses the real control plane.
     client
         .send_event(&Event::new(&parent_event_name, EmptyEventData {}))
         .await
@@ -84,6 +88,7 @@ async fn step_invoke_returns_child_output() {
     let run_id = wait_for_state(&parent_run_id, Duration::from_secs(5)).await;
     let run = wait_for_run_status(&run_id, "Completed", Duration::from_secs(15)).await;
 
+    // Both the in-process state capture and the final run output should see the child payload.
     let result = wait_for_state(&invoke_result, Duration::from_secs(5)).await;
     assert_eq!(result, "hello-from-child");
     assert_eq!(run.output, json!("hello-from-child"));
