@@ -9,6 +9,7 @@ const INNGEST_DEV: &str = "INNGEST_DEV";
 
 // server side
 const INNGEST_SIGNING_KEY: &str = "INNGEST_SIGNING_KEY";
+const INNGEST_SIGNING_KEY_FALLBACK: &str = "INNGEST_SIGNING_KEY_FALLBACK";
 const INNGEST_SERVE_ORIGIN: &str = "INNGEST_SERVE_ORIGIN";
 const INNGEST_SERVE_PATH: &str = "INNGEST_SERVE_PATH";
 
@@ -37,6 +38,10 @@ impl Config {
 
     pub fn signing_key() -> Option<String> {
         Self::read_env_str(INNGEST_SIGNING_KEY)
+    }
+
+    pub fn signing_key_fallback() -> Option<String> {
+        Self::read_env_str(INNGEST_SIGNING_KEY_FALLBACK)
     }
 
     pub fn serve_origin() -> Option<String> {
