@@ -24,6 +24,14 @@ Use standard conventional commit formatting such as `fix(promapi): handle empty 
 
 ## Development Commands
 
+- commit in logical sections whenever possible to make each commit as reviewable by its own as possible
+- run `make lint` and tests targeting the changes to confirm expected results and there are no build failures
+
+### Tests
+
+- Always add tests to verify behavior
+- When fixing bugs, make sure to create a test case with that ideal outcome that fails with existing behavior before proceeding with a fix
+
 ### Building and Running
 
 - `cargo check -p inngest` checks the crate without running tests
