@@ -16,6 +16,16 @@ const API_ORIGIN_DEV: &str = "http://127.0.0.1:8288";
 pub(crate) const EVENT_API_ORIGIN: &str = "https://inn.gs";
 pub(crate) const API_ORIGIN: &str = "https://api.inngest.com";
 
+/// The response returned by the Inngest event ingestion API.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
+pub struct SendEventResponse {
+    #[serde(default)]
+    pub ids: Vec<String>,
+    #[serde(default)]
+    pub status: u16,
+    pub error: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct Inngest {
     id: String,
@@ -99,54 +109,75 @@ impl Inngest {
         let app_id = self.app_id();
         ServableFn {
             app_id,
+            client: self.clone(),
             opts,
             trigger,
             func: Box::new(move |input, step| func(input, step).boxed()),
         }
     }
 
-    // TODO: make the result return something properly
-    pub async fn send_event<T: InngestEvent>(&self, evt: &Event<T>) -> Result<(), DevError> {
-        self.http
-            .post(format!(
-                "{}/e/{}",
-                self.inngest_evt_api_origin(),
-                self.inngest_evt_api_key()
-            ))
-            .json(&evt)
-            .send()
-            .await
-            .map(|_| ())
-            .map_err(|err| DevError::Basic(format!("{}", err)))
+    /// Sends a single event to the configured Inngest event API.
+    pub async fn send_event<T: InngestEvent>(
+        &self,
+        evt: &Event<T>,
+    ) -> Result<SendEventResponse, DevError> {
+        self.send_payload(evt).await
     }
 
-    // TODO: make the result return something properly
-    pub async fn send_events<T: InngestEvent>(&self, evts: &[&Event<T>]) -> Result<(), DevError> {
-        self.http
-            .post(format!(
-                "{}/e/{}",
-                self.inngest_evt_api_origin(),
-                self.inngest_evt_api_key()
-            ))
-            .json(&evts)
-            .send()
-            .await
-            .map(|_| ())
-            .map_err(|err| DevError::Basic(format!("{}", err)))
+    /// Sends multiple events to the configured Inngest event API.
+    pub async fn send_events<T: InngestEvent>(
+        &self,
+        evts: &[&Event<T>],
+    ) -> Result<SendEventResponse, DevError> {
+        self.send_payload(evts).await
     }
 
-    pub(crate) fn inngest_api_origin(&self, kind: Kind) -> String {
-        if let Some(dev) = self.dev.clone() {
-            return dev;
+    pub(crate) async fn send_owned_events_with_ids<T: InngestEvent>(
+        &self,
+        evts: &[Event<T>],
+    ) -> Result<Vec<String>, DevError> {
+        self.send_payload(evts).await.map(|response| response.ids)
+    }
+
+    async fn send_payload<T: serde::Serialize + ?Sized>(
+        &self,
+        payload: &T,
+    ) -> Result<SendEventResponse, DevError> {
+        let event_url = self.event_api_url();
+        let response = self
+            .http
+            .post(event_url)
+            .json(payload)
+            .send()
+            .await
+            .map_err(|err| DevError::Basic(format!("{}", err)))?;
+
+        let http_status = response.status();
+        let body: SendEventResponse = response.json().await.map_err(|err| {
+            DevError::Basic(format!("error decoding event send response: {}", err))
+        })?;
+
+        if !http_status.is_success() || body.status != 200 || body.error.is_some() {
+            let message = body.error.unwrap_or_else(|| {
+                format!(
+                    "unexpected event send response (http {}, body {})",
+                    http_status.as_u16(),
+                    body.status
+                )
+            });
+            return Err(DevError::Basic(message));
         }
 
-        if let Some(endpoint) = self.api_origin.clone() {
-            return endpoint;
-        }
+        Ok(body)
+    }
 
-        match kind {
-            Kind::Dev => API_ORIGIN_DEV.to_string(),
-            Kind::Cloud => API_ORIGIN.to_string(),
+    fn event_api_url(&self) -> String {
+        let origin = self.inngest_evt_api_origin();
+        let event_key = self.inngest_evt_api_key();
+
+        match Url::parse(&origin).and_then(|url| url.join(&format!("e/{}", event_key))) {
+            Ok(url) => url.to_string(),
+            Err(_) => format!("{}/e/{}", origin.trim_end_matches('/'), event_key),
         }
     }
 
@@ -171,5 +202,97 @@ impl Inngest {
             Some(key) => key,
             None => "test".to_string(),
         }
+    }
+
+    pub(crate) fn inngest_api_origin(&self, kind: Kind) -> String {
+        if let Some(dev) = self.dev.clone() {
+            return dev;
+        }
+
+        if let Some(endpoint) = self.api_origin.clone() {
+            return endpoint;
+        }
+
+        match kind {
+            Kind::Dev => API_ORIGIN_DEV.to_string(),
+            Kind::Cloud => API_ORIGIN.to_string(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{routing::post, Json, Router};
+    use serde::{Deserialize, Serialize};
+    use serde_json::{json, Value};
+    use std::net::TcpListener;
+
+    #[derive(Clone, Debug, Deserialize, Serialize)]
+    struct TestEventData {
+        value: String,
+    }
+
+    #[tokio::test]
+    async fn send_event_returns_send_event_response() {
+        async fn ingest(Json(_body): Json<Value>) -> Json<Value> {
+            Json(json!({
+                "ids": ["evt-1"],
+                "status": 200
+            }))
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
+        let addr = listener.local_addr().expect("listener addr should exist");
+        let app = Router::new().route("/e/:event_key", post(ingest));
+
+        tokio::spawn(async move {
+            axum::Server::from_tcp(listener)
+                .expect("server should bind")
+                .serve(app.into_make_service())
+                .await
+                .expect("server should serve");
+        });
+
+        let client = Inngest::new("test-app")
+            .event_api_origin(&format!("http://{}", addr))
+            .event_key("test-key");
+        let response = client
+            .send_event(&Event::new(
+                "test/send",
+                TestEventData {
+                    value: "hello".to_string(),
+                },
+            ))
+            .await
+            .expect("send_event should return the parsed response");
+
+        assert_eq!(
+            response,
+            SendEventResponse {
+                ids: vec!["evt-1".to_string()],
+                status: 200,
+                error: None,
+            }
+        );
+    }
+
+    #[test]
+    fn event_api_url_normalizes_trailing_slash() {
+        let with_slash = Inngest::new("test-app")
+            .event_api_origin("http://127.0.0.1:8288/")
+            .event_key("test-key");
+        let without_slash = Inngest::new("test-app")
+            .event_api_origin("http://127.0.0.1:8288")
+            .event_key("test-key");
+
+        assert_eq!(
+            with_slash.event_api_url(),
+            "http://127.0.0.1:8288/e/test-key"
+        );
+        assert_eq!(
+            without_slash.event_api_url(),
+            "http://127.0.0.1:8288/e/test-key"
+        );
     }
 }

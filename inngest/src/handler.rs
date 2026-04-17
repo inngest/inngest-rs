@@ -91,6 +91,7 @@ where
     fn from(func: ServableFn<T, E>) -> Self {
         let ServableFn {
             app_id,
+            client,
             opts,
             trigger,
             func,
@@ -103,6 +104,7 @@ where
             trigger,
             func: Box::new(move |fn_id, body| {
                 let step_func = Arc::clone(&func);
+                let client = client.clone();
 
                 async move {
                     let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
@@ -129,7 +131,7 @@ where
                         },
                     };
 
-                    let step_tool = StepTool::new(&data.steps);
+                    let step_tool = StepTool::new(client.clone(), &data.steps);
 
                     match std::panic::catch_unwind(AssertUnwindSafe(|| {
                         (step_func.as_ref())(input, step_tool.clone())
