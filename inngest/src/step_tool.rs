@@ -442,6 +442,7 @@ impl Step {
     }
 }
 
+#[cfg(test)]
 fn parse_invoke_response<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, Error> {
     match parse_memoized_step_result(Some(value), "invoke step")? {
         MemoizedStepResult::Data { data } => Ok(data),

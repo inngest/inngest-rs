@@ -40,11 +40,11 @@
 - [X] Add unit tests for `ctx.use_api` memoization parity
 - [X] Add unit tests for targeted `stepId` lookup and `StepNotFound`
 - [ ] Add unit tests for stack-ordered memoization and recovery fallback
-- [ ] Add an e2e test for repeated step IDs replaying with distinct memoized results
+- [X] Add an e2e test for repeated step IDs replaying with distinct memoized results
 - [ ] Add an e2e test for memoized step-error replay without rerunning the failed step body
-- [ ] Add an e2e test for invoke failure replay and memoized error surfacing
-- [ ] Add an e2e test for durable multi-event send replay returning all emitted IDs
-- [ ] Add an e2e test for `sleep_until` resume behavior
+- [X] Add an e2e test for invoke failure replay and memoized error surfacing
+- [X] Add an e2e test for durable multi-event send replay returning all emitted IDs
+- [X] Add an e2e test for `sleep_until` resume behavior
 
 ** Exit Criteria
 - [ ] Step IDs are stable and spec-correct across repeated executions

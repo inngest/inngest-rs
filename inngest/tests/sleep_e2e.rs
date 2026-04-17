@@ -15,7 +15,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -84,4 +84,69 @@ async fn step_sleep_pauses_and_resumes_the_run() {
     );
     assert_eq!(handler_invocations.load(Ordering::SeqCst), 2);
     assert_eq!(run.output, json!({ "slept": true }));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn step_sleep_until_pauses_and_resumes_the_run() {
+    let _lock = DevServerLock::acquire();
+    let _dev_server = DevServer::start().await;
+
+    let app_name = e2e_support::unique_name("sleep-until-e2e-app");
+    let sleep_event_name = e2e_support::unique_name("test.sleep.until.parent");
+
+    let client = Inngest::new(&app_name).dev(e2e_support::DEV_SERVER_ORIGIN);
+    let run_id_state = Arc::new(Mutex::new(None::<String>));
+    let resumed_at_state = Arc::new(Mutex::new(None::<Instant>));
+    let handler_invocations = Arc::new(AtomicUsize::new(0));
+
+    let run_id_capture = Arc::clone(&run_id_state);
+    let resumed_at_capture = Arc::clone(&resumed_at_state);
+    let handler_invocations_capture = Arc::clone(&handler_invocations);
+    let sleep_fn: ServableFn<EmptyEventData, Error> = client.create_function(
+        FunctionOpts::new("sleep-until-fn").name("Sleep Until Fn"),
+        Trigger::event(&sleep_event_name),
+        move |input: Input<EmptyEventData>, step: StepTool| {
+            let run_id_capture = Arc::clone(&run_id_capture);
+            let resumed_at_capture = Arc::clone(&resumed_at_capture);
+            let handler_invocations_capture = Arc::clone(&handler_invocations_capture);
+
+            async move {
+                handler_invocations_capture.fetch_add(1, Ordering::SeqCst);
+                *run_id_capture.lock().unwrap() = Some(input.ctx.run_id.clone());
+
+                let wake_at_ms = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("clock should be after unix epoch")
+                    .as_millis() as i64
+                    + 1_200;
+                step.sleep_until("pause-until-complete", wake_at_ms)?;
+
+                *resumed_at_capture.lock().unwrap() = Some(Instant::now());
+
+                Ok(json!({ "slept_until": true }))
+            }
+        },
+    );
+
+    let app = spawn_app(client.clone(), vec![sleep_fn.into()]).await;
+    app.sync().await;
+
+    let sent_at = Instant::now();
+    client
+        .send_event(&Event::new(&sleep_event_name, EmptyEventData {}))
+        .await
+        .expect("sleep-until event should send successfully");
+
+    let run_id = wait_for_state(&run_id_state, Duration::from_secs(5)).await;
+    wait_for_run_status(&run_id, "Running", Duration::from_secs(5)).await;
+
+    let run = wait_for_run_status(&run_id, "Completed", Duration::from_secs(10)).await;
+    let resumed_at = wait_for_state(&resumed_at_state, Duration::from_secs(5)).await;
+
+    assert!(
+        resumed_at.duration_since(sent_at) >= Duration::from_secs(1),
+        "sleep_until resumed too quickly"
+    );
+    assert_eq!(handler_invocations.load(Ordering::SeqCst), 2);
+    assert_eq!(run.output, json!({ "slept_until": true }));
 }
