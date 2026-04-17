@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   release:
-    name: Publish GitHub release
+    name: Publish crate and GitHub release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout tagged commit
@@ -24,6 +24,7 @@ jobs:
           ref: ${{ github.ref }}
 
       - name: Validate tag matches crate version
+        id: version
         run: |
           tag_version="${GITHUB_REF_NAME#v}"
           crate_version="$(sed -n 's/^version = "\(.*\)"/\1/p' inngest/Cargo.toml | head -n 1)"
@@ -37,6 +38,37 @@ jobs:
             echo "Tag ${GITHUB_REF_NAME} does not match inngest/Cargo.toml version ${crate_version}"
             exit 1
           fi
+
+          echo "crate_version=${crate_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check whether crate version already exists on crates.io
+        id: crates-io
+        env:
+          CRATE_VERSION: ${{ steps.version.outputs.crate_version }}
+        run: |
+          status="$(curl -fsS -o /tmp/inngest-crate.json -w '%{http_code}' "https://crates.io/api/v1/crates/inngest/${CRATE_VERSION}" || true)"
+
+          if [ "${status}" = "200" ]; then
+            echo "skip_publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${status}" = "404" ]; then
+            echo "skip_publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Unexpected crates.io response while checking version ${CRATE_VERSION}: ${status}"
+          exit 1
+
+      - name: Publish crate to crates.io
+        if: steps.crates-io.outputs.skip_publish != 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --manifest-path inngest/Cargo.toml --locked
 
       - name: Generate release notes
         uses: orhun/git-cliff-action@v4
