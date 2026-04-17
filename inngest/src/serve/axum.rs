@@ -3,7 +3,7 @@ use crate::{
     handler::{Handler, IntrospectResult, RunQueryParams, SyncQueryParams, SyncResponse},
     header::{self, Headers},
     result::{Error, SdkResponse},
-    version,
+    version::{self, EXECUTION_VERSION},
 };
 
 use axum::{
@@ -65,7 +65,10 @@ impl IntoResponse for SdkResponse {
             header::INNGEST_SDK,
             HeaderValue::from_str(&version::sdk()).unwrap(),
         );
-        headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
+        headers.insert(
+            header::INNGEST_REQ_VERSION,
+            HeaderValue::from_static(EXECUTION_VERSION),
+        );
 
         match self.status {
             200 => (StatusCode::OK, headers, Json(self.body)).into_response(),
@@ -92,7 +95,10 @@ impl IntoResponse for SyncResponse {
             header::INNGEST_SDK,
             HeaderValue::from_str(&version::sdk()).unwrap(),
         );
-        headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
+        headers.insert(
+            header::INNGEST_REQ_VERSION,
+            HeaderValue::from_static(EXECUTION_VERSION),
+        );
 
         (StatusCode::OK, headers, Json(&self)).into_response()
     }
@@ -113,8 +119,41 @@ impl IntoResponse for IntrospectResult {
             header::INNGEST_SDK,
             HeaderValue::from_str(&version::sdk()).unwrap(),
         );
-        headers.insert(header::INNGEST_REQ_VERSION, HeaderValue::from_static("1"));
+        headers.insert(
+            header::INNGEST_REQ_VERSION,
+            HeaderValue::from_static(EXECUTION_VERSION),
+        );
 
         (StatusCode::OK, headers, Json(&self)).into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+    use serde_json::json;
+
+    #[test]
+    fn sdk_response_includes_protocol_headers() {
+        let response = SdkResponse {
+            status: 200,
+            body: json!({ "ok": true }),
+        }
+        .into_response();
+
+        let headers = response.headers();
+        assert_eq!(
+            headers.get(header::INNGEST_SDK).unwrap(),
+            HeaderValue::from_str(&version::sdk()).unwrap()
+        );
+        assert_eq!(
+            headers.get(header::INNGEST_REQ_VERSION).unwrap(),
+            HeaderValue::from_static(EXECUTION_VERSION)
+        );
+        assert_eq!(
+            headers.get(header::INNGEST_FRAMEWORK).unwrap(),
+            HeaderValue::from_static(FRAMEWORK)
+        );
     }
 }

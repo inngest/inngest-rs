@@ -10,6 +10,14 @@ send-events:
 test:
 	cargo test
 
+.PHONY: test-unit
+test-unit:
+	cargo test --lib --bins
+
+.PHONY: test-doc
+test-doc:
+	cargo test --doc
+
 .PHONY: test-e2e
 test-e2e:
 	./scripts/run-e2e-tests.sh

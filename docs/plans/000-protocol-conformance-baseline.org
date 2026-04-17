@@ -1,6 +1,6 @@
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-16
-#+STATUS: Draft
+#+STATUS: Done
 
 * Milestone 000: Protocol Conformance Baseline
 
@@ -14,23 +14,23 @@
 - Error response structure and retry headers
 
 ** Checklist
-- [ ] Update `X-Inngest-Sdk` formatting to match `name:vsemver`
-- [ ] Update `X-Inngest-Req-Version` to `2` for all relevant responses
-- [ ] Fix sync payload `v` from `1` to `0.1`
-- [ ] Ensure sync payload `sdk` matches the response header format exactly
-- [ ] Fix step runtime URL generation to use `stepId=step` instead of `step=step`
-- [ ] Ensure the top-level sync URL does not accidentally include deploy-specific query parameters
-- [ ] Align call error payloads to the spec shape `{ name, message, stack? }`
-- [ ] Return `X-Inngest-No-Retry: true|false` on all call error responses
-- [ ] Return `400` for non-retriable errors and `500` for retriable errors
-- [ ] Preserve `Retry-After` behavior only for retriable errors
-- [ ] Add tests for sync payload serialization
-- [ ] Add tests for HTTP response headers and status codes
+- [X] Update `X-Inngest-Sdk` formatting to match `name:vsemver`
+- [X] Update `X-Inngest-Req-Version` to `2` for all relevant responses
+- [X] Fix sync payload `v` from `1` to `0.1`
+- [X] Ensure sync payload `sdk` matches the response header format exactly
+- [X] Fix step runtime URL generation to use `stepId=step` instead of `step=step`
+- [X] Ensure the top-level sync URL does not accidentally include deploy-specific query parameters
+- [X] Align call error payloads to the spec shape `{ name, message, stack? }`
+- [X] Return `X-Inngest-No-Retry: true|false` on all call error responses
+- [X] Return `400` for non-retriable errors and `500` for retriable errors
+- [X] Preserve `Retry-After` behavior only for retriable errors
+- [X] Add tests for sync payload serialization
+- [X] Add tests for HTTP response headers and status codes
 
 ** Exit Criteria
-- [ ] Sync requests and call responses serialize to spec-compatible shapes
-- [ ] Header/version behavior is covered by tests
-- [ ] No known wire-format mismatches remain in the base HTTP path
+- [X] Sync requests and call responses serialize to spec-compatible shapes
+- [X] Header/version behavior is covered by tests
+- [X] No known wire-format mismatches remain in the base HTTP path
 
 ** Out of Scope
 - Step execution model changes

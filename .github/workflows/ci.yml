@@ -78,7 +78,6 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    # needs: [build]
     steps:
       - uses: actions/checkout@v3
       - name: Cache
@@ -95,7 +94,27 @@ jobs:
           toolchain: stable
           override: true
       - name: Test
-        run: cargo test -p inngest --lib
+        run: make test-unit
+
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Test
+        run: make test-doc
 
   e2e:
     runs-on: ubuntu-latest
