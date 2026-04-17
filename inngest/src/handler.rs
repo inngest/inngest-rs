@@ -484,7 +484,10 @@ impl Handler {
         framework: &str,
     ) -> Result<SyncResponse, String> {
         let req = self.sync_payload(_headers, framework);
-        let sync_url = format!("{}/fn/register", self.inngest.inngest_api_origin().trim_end_matches('/'));
+        let sync_url = format!(
+            "{}/fn/register",
+            self.inngest.inngest_api_origin().trim_end_matches('/')
+        );
 
         let mut resp = self
             .send_sync_request(&sync_url, &req, query, self.signing_key.as_deref())
@@ -495,12 +498,7 @@ impl Handler {
             && self.signing_key_fallback.is_some()
         {
             resp = self
-                .send_sync_request(
-                    &sync_url,
-                    &req,
-                    query,
-                    self.signing_key_fallback.as_deref(),
-                )
+                .send_sync_request(&sync_url, &req, query, self.signing_key_fallback.as_deref())
                 .await?;
         }
 
@@ -717,21 +715,21 @@ pub struct InngestSyncSuccess {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::function::ServableFn;
     use axum::{
         extract::State,
         http::{HeaderMap, StatusCode, Uri},
         routing::post,
         Router,
     };
-    use crate::function::ServableFn;
     use hmac::{Hmac, Mac};
     use serde::{Deserialize, Serialize};
+    use sha2::Sha256;
     use std::{
         collections::{HashSet, VecDeque},
         net::TcpListener,
         sync::Arc,
     };
-    use sha2::Sha256;
     use tokio::sync::Mutex;
 
     #[derive(Debug, Deserialize, Serialize)]
@@ -1043,7 +1041,12 @@ mod tests {
         let body = event_body("test/first", json!({ "message": "hello" }));
 
         let error = match handler
-            .run(&headers, &RunQueryParams { fn_id }, &body.to_string(), &body)
+            .run(
+                &headers,
+                &RunQueryParams { fn_id },
+                &body.to_string(),
+                &body,
+            )
             .await
         {
             Ok(_) => panic!("cloud mode should reject missing primary signing key"),
@@ -1058,16 +1061,18 @@ mod tests {
 
     #[tokio::test]
     async fn cloud_mode_requires_signature_even_if_request_claims_dev() {
-        let (handler, fn_id) = registered_handler(
-            Inngest::new("test-app"),
-            Some(PRIMARY_SIGNING_KEY),
-            None,
-        );
+        let (handler, fn_id) =
+            registered_handler(Inngest::new("test-app"), Some(PRIMARY_SIGNING_KEY), None);
         let headers = headers(&[(header::INNGEST_SERVER_KIND, "dev")]);
         let body = event_body("test/first", json!({ "message": "hello" }));
 
         let error = match handler
-            .run(&headers, &RunQueryParams { fn_id }, &body.to_string(), &body)
+            .run(
+                &headers,
+                &RunQueryParams { fn_id },
+                &body.to_string(),
+                &body,
+            )
             .await
         {
             Ok(_) => panic!("cloud mode should still require a signature"),
@@ -1085,7 +1090,12 @@ mod tests {
         let body = event_body("test/first", json!({ "message": "hello" }));
 
         let response = handler
-            .run(&headers, &RunQueryParams { fn_id }, &body.to_string(), &body)
+            .run(
+                &headers,
+                &RunQueryParams { fn_id },
+                &body.to_string(),
+                &body,
+            )
             .await
             .expect("dev mode should allow unsigned requests");
 
@@ -1100,7 +1110,12 @@ mod tests {
         let headers = headers(&[(header::INNGEST_SIGNATURE, "t=1&s=deadbeef")]);
 
         let error = match handler
-            .run(&headers, &RunQueryParams { fn_id }, &body.to_string(), &body)
+            .run(
+                &headers,
+                &RunQueryParams { fn_id },
+                &body.to_string(),
+                &body,
+            )
             .await
         {
             Ok(_) => panic!("invalid signatures should fail in dev mode when a key is configured"),
@@ -1122,7 +1137,12 @@ mod tests {
         let headers = headers(&[(header::INNGEST_SIGNATURE, &signature)]);
 
         let response = handler
-            .run(&headers, &RunQueryParams { fn_id }, &body.to_string(), &body)
+            .run(
+                &headers,
+                &RunQueryParams { fn_id },
+                &body.to_string(),
+                &body,
+            )
             .await
             .expect("fallback signing key should validate the request");
 
@@ -1198,7 +1218,8 @@ mod tests {
 
     #[tokio::test]
     async fn sync_uses_configured_api_origin_even_when_request_header_says_dev() {
-        let (origin, records) = spawn_sync_server(vec![(StatusCode::OK, sync_success_body())]).await;
+        let (origin, records) =
+            spawn_sync_server(vec![(StatusCode::OK, sync_success_body())]).await;
         let client = Inngest::new("test-app").api_origin(&origin);
         let (handler, _fn_id) = registered_handler(client, None, None);
         let headers = headers(&[(header::INNGEST_SERVER_KIND, "dev")]);
@@ -1228,13 +1249,14 @@ mod tests {
     #[tokio::test]
     async fn sync_retries_with_fallback_signing_key_and_sets_protocol_headers() {
         let (origin, records) = spawn_sync_server(vec![
-            (StatusCode::UNAUTHORIZED, "{\"error\":\"unauthorized\"}".to_string()),
+            (
+                StatusCode::UNAUTHORIZED,
+                "{\"error\":\"unauthorized\"}".to_string(),
+            ),
             (StatusCode::OK, sync_success_body()),
         ])
         .await;
-        let client = Inngest::new("test-app")
-            .api_origin(&origin)
-            .env("branch");
+        let client = Inngest::new("test-app").api_origin(&origin).env("branch");
         let (handler, _fn_id) = registered_handler(
             client,
             Some(PRIMARY_SIGNING_KEY),
