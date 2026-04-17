@@ -9,6 +9,7 @@
 
 ** Scope
 - Mode selection
+- Config-driven server targeting for sync/authenticated API calls
 - Signature verification rules
 - Signing key fallback support
 - Introspection auth metadata
@@ -16,23 +17,33 @@
 ** Checklist
 - [ ] Stop deriving effective mode from incoming server headers
 - [ ] Use SDK configuration and environment to decide cloud vs dev behavior
+- [ ] Keep sync targeting driven by configured mode and configured origins, not triggering request headers
+- [ ] Reject cloud-mode requests when no signing key is configured
 - [ ] Enforce signature presence for cloud mode requests
 - [ ] Allow missing signatures in dev mode while still validating when a signature is present
+- [ ] Always validate introspection signatures when present and return authenticated vs unauthenticated payloads accordingly
 - [ ] Add support for `INNGEST_SIGNING_KEY_FALLBACK`
 - [ ] Try the fallback signing key when primary verification fails
 - [ ] Reuse fallback behavior for outbound authenticated API calls
+- [ ] Preserve outbound auth header requirements when touching authenticated API calls (`Authorization`, `X-Inngest-Sdk`, `X-Inngest-Req-Version`, `X-Inngest-Env` when available)
 - [ ] Report fallback signing key presence in introspection responses
 - [ ] Report fallback signing key hash in authenticated introspection responses
 - [ ] Populate introspection `env` when available
+- [ ] Keep introspection auth metadata schema-limited to spec-defined top-level fields
 - [ ] Add tests for cloud/dev verification behavior
+- [ ] Add tests for cloud-mode missing-signing-key and missing-signature failure paths
 - [ ] Add tests for primary-key and fallback-key verification paths
+- [ ] Add tests proving configured mode, not inbound headers, drives sync target selection
 
 ** Exit Criteria
 - [ ] Incoming request verification is driven by configured mode, not request headers
+- [ ] Sync targeting and outbound auth selection are driven by configured mode/origins, not request headers
+- [ ] Cloud-mode failures for missing signing key and missing signature match spec expectations
 - [ ] Fallback key logic works for both verification and outbound auth
-- [ ] Introspection accurately reports auth-related state
+- [ ] Introspection accurately reports auth-related state without leaking non-spec top-level fields
 
 ** Out of Scope
 - Full call-request execution semantics
 - Middleware
 - Connect
+- Dev-mode warning behavior for unexpected `X-Inngest-Server-Kind` values
