@@ -648,6 +648,7 @@ mod tests {
     use crate::function::ServableFn;
     use axum::http::HeaderMap;
     use serde::{Deserialize, Serialize};
+    use std::collections::HashSet;
 
     #[derive(Debug, Deserialize, Serialize)]
     struct FirstEvent {
@@ -737,5 +738,178 @@ mod tests {
             .expect("second function should run");
         assert_eq!(second_response.status, 200);
         assert_eq!(second_response.body, json!({ "count": 42 }));
+    }
+
+    #[tokio::test]
+    async fn handler_dispatches_functions_registered_via_mixed_apis() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let first_fn: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first"),
+            Trigger::event("test/first"),
+            |input: Input<FirstEvent>, _step| async move {
+                Ok(json!({ "message": input.event.data.message }))
+            },
+        );
+        let first_fn_id = first_fn.slug();
+        handler.register_fn(first_fn);
+
+        let second_fn: ServableFn<SecondEvent, Error> = client.create_function(
+            FunctionOpts::new("second"),
+            Trigger::event("test/second"),
+            |input: Input<SecondEvent>, _step| async move {
+                Ok(json!({ "count": input.event.data.count }))
+            },
+        );
+        let second_fn_id = second_fn.slug();
+        handler.register_fns(vec![second_fn.into()]);
+
+        let headers = Headers::from(HeaderMap::new());
+
+        let first_response = handler
+            .run(
+                &headers,
+                &RunQueryParams { fn_id: first_fn_id },
+                &event_body("test/first", json!({ "message": "hello" })).to_string(),
+                &event_body("test/first", json!({ "message": "hello" })),
+            )
+            .await
+            .expect("first function should run");
+        assert_eq!(first_response.body, json!({ "message": "hello" }));
+
+        let second_response = handler
+            .run(
+                &headers,
+                &RunQueryParams {
+                    fn_id: second_fn_id,
+                },
+                &event_body("test/second", json!({ "count": 42 })).to_string(),
+                &event_body("test/second", json!({ "count": 42 })),
+            )
+            .await
+            .expect("second function should run");
+        assert_eq!(second_response.body, json!({ "count": 42 }));
+    }
+
+    #[tokio::test]
+    async fn handler_returns_error_for_unknown_function_id() {
+        let client = Inngest::new("test-app");
+        let handler = Handler::new(&client);
+        let headers = Headers::from(HeaderMap::new());
+        let body = event_body("test/first", json!({ "message": "hello" }));
+
+        let error = match handler
+            .run(
+                &headers,
+                &RunQueryParams {
+                    fn_id: "test-app-missing".to_string(),
+                },
+                &body.to_string(),
+                &body,
+            )
+            .await
+        {
+            Ok(_) => panic!("missing function id should fail"),
+            Err(error) => error,
+        };
+
+        match error {
+            Error::Dev(crate::result::DevError::Basic(message)) => {
+                assert!(message.contains("no function registered as ID"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn handler_returns_error_for_mismatched_event_payload() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let first_fn: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first"),
+            Trigger::event("test/first"),
+            |input: Input<FirstEvent>, _step| async move {
+                Ok(json!({ "message": input.event.data.message }))
+            },
+        );
+        let first_fn_id = first_fn.slug();
+        handler.register_fn(first_fn);
+
+        let headers = Headers::from(HeaderMap::new());
+        let body = event_body("test/first", json!({ "count": 42 }));
+
+        let error = match handler
+            .run(
+                &headers,
+                &RunQueryParams { fn_id: first_fn_id },
+                &body.to_string(),
+                &body,
+            )
+            .await
+        {
+            Ok(_) => panic!("mismatched payload should fail"),
+            Err(error) => error,
+        };
+
+        match error {
+            Error::Dev(crate::result::DevError::Basic(message)) => {
+                assert!(message.contains("error parsing run request"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sync_payload_includes_all_registered_functions() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let first_fn: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first"),
+            Trigger::event("test/first"),
+            |input: Input<FirstEvent>, _step| async move {
+                Ok(json!({ "message": input.event.data.message }))
+            },
+        );
+        let second_fn: ServableFn<SecondEvent, Error> = client.create_function(
+            FunctionOpts::new("second"),
+            Trigger::event("test/second"),
+            |input: Input<SecondEvent>, _step| async move {
+                Ok(json!({ "count": input.event.data.count }))
+            },
+        );
+
+        handler.register_fns(vec![first_fn.into(), second_fn.into()]);
+
+        let payload = handler.sync_payload(&Headers::from(HeaderMap::new()), "axum");
+        let function_ids: HashSet<String> = payload
+            .functions
+            .into_iter()
+            .map(|function| function.id)
+            .collect();
+
+        assert_eq!(payload.app_name, "test-app");
+        assert_eq!(payload.framework, "axum");
+        assert_eq!(function_ids.len(), 2);
+        assert!(function_ids.contains("test-app-first"));
+        assert!(function_ids.contains("test-app-second"));
+    }
+
+    fn event_body(name: &str, data: Value) -> Value {
+        json!({
+            "ctx": { "attempt": 1, "env": "test", "run_id": "run-1" },
+            "event": {
+                "id": null,
+                "name": name,
+                "data": data,
+                "ts": null,
+                "v": null
+            },
+            "events": [],
+            "use_api": false,
+            "steps": {}
+        })
     }
 }
