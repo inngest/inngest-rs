@@ -19,13 +19,11 @@ async fn main() {
 
     let client = Inngest::new("rust-dev");
     let mut inngest_handler = Handler::new(&client);
-    inngest_handler.register_fns(vec![
-        dummy_fn(&client),
-        hello_fn(&client),
-        step_run(&client),
-        fallible_step_run(&client),
-        incorrectly_propagates_error(&client),
-    ]);
+    inngest_handler.register_fn(dummy_fn(&client));
+    inngest_handler.register_fn(hello_fn(&client));
+    inngest_handler.register_fn(step_run(&client));
+    inngest_handler.register_fn(fallible_step_run(&client));
+    inngest_handler.register_fn(incorrectly_propagates_error(&client));
 
     let inngest_state = Arc::new(inngest_handler);
 
@@ -85,19 +83,29 @@ impl From<UserLandError> for inngest::result::Error {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-#[serde(untagged)]
-enum Data {
-    TestData { name: String, data: u8 },
-    Hello { msg: String },
+struct DummyEventData {
+    name: String,
+    data: u8,
 }
 
-fn dummy_fn(client: &Inngest) -> ServableFn<Data, Error> {
+#[derive(Serialize, Deserialize, Debug)]
+struct HelloEventData {
+    msg: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct StepRunEventData {
+    name: String,
+    data: u8,
+}
+
+fn dummy_fn(client: &Inngest) -> ServableFn<DummyEventData, Error> {
     let invoke_id = fallible_step_run(client).slug();
 
     client.create_function(
         FunctionOpts::new("dummy-func").name("Dummy func"),
         Trigger::event("test/event"),
-        move |_input: Input<Data>, step: StepTool| {
+        move |_input: Input<DummyEventData>, step: StepTool| {
             let function_id = invoke_id.clone();
 
             async move {
@@ -131,11 +139,11 @@ fn dummy_fn(client: &Inngest) -> ServableFn<Data, Error> {
     )
 }
 
-fn hello_fn(client: &Inngest) -> ServableFn<Data, Error> {
+fn hello_fn(client: &Inngest) -> ServableFn<HelloEventData, Error> {
     client.create_function(
         FunctionOpts::new("hello-func").name("Hello func"),
         Trigger::event("test/hello"),
-        |input: Input<Data>, step: StepTool| async move {
+        |input: Input<HelloEventData>, step: StepTool| async move {
             let step_res = into_dev_result!(
                 step.run("fallible-step-function", || async move {
                     // if even, fail
@@ -167,7 +175,10 @@ fn hello_fn(client: &Inngest) -> ServableFn<Data, Error> {
     )
 }
 
-async fn call_some_step_function(_input: Input<Data>, step: StepTool) -> Result<Value, Error> {
+async fn call_some_step_function(
+    _input: Input<StepRunEventData>,
+    step: StepTool,
+) -> Result<Value, Error> {
     let some_captured_variable = "captured".to_string();
 
     let step_res = step
@@ -184,7 +195,7 @@ async fn call_some_step_function(_input: Input<Data>, step: StepTool) -> Result<
     Ok(step_res)
 }
 
-fn step_run(client: &Inngest) -> ServableFn<Data, Error> {
+fn step_run(client: &Inngest) -> ServableFn<StepRunEventData, Error> {
     client.create_function(
         FunctionOpts::new("step-run").name("Step run"),
         Trigger::event("test/step-run"),
@@ -192,11 +203,11 @@ fn step_run(client: &Inngest) -> ServableFn<Data, Error> {
     )
 }
 
-fn incorrectly_propagates_error(client: &Inngest) -> ServableFn<Data, Error> {
+fn incorrectly_propagates_error(client: &Inngest) -> ServableFn<StepRunEventData, Error> {
     client.create_function(
         FunctionOpts::new("step-run").name("Step run"),
         Trigger::event("test/step-run-incorrect"),
-        |_input: Input<Data>, step: StepTool| async move {
+        |_input: Input<StepRunEventData>, step: StepTool| async move {
             let some_captured_variable = "captured".to_string();
 
             let res = step
@@ -218,11 +229,11 @@ fn incorrectly_propagates_error(client: &Inngest) -> ServableFn<Data, Error> {
     )
 }
 
-fn fallible_step_run(client: &Inngest) -> ServableFn<Data, Error> {
+fn fallible_step_run(client: &Inngest) -> ServableFn<StepRunEventData, Error> {
     client.create_function(
         FunctionOpts::new("fallible-step-run").name("Fallible Step run"),
         Trigger::event("test/step-run-fallible"),
-        |input: Input<Data>, step: StepTool| async move {
+        |input: Input<StepRunEventData>, step: StepTool| async move {
             let step_res = into_dev_result!(
                 step.run("fallible-step-function", || async move {
                     // if even, fail
