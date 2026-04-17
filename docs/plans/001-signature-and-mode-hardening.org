@@ -15,32 +15,32 @@
 - Introspection auth metadata
 
 ** Checklist
-- [x] Stop deriving effective mode from incoming server headers
-- [x] Use SDK configuration and environment to decide cloud vs dev behavior
-- [x] Keep sync targeting driven by configured mode and configured origins, not triggering request headers
-- [x] Reject cloud-mode requests when no signing key is configured
-- [x] Enforce signature presence for cloud mode requests
-- [x] Allow missing signatures in dev mode while still validating when a signature is present
-- [x] Always validate introspection signatures when present and return authenticated vs unauthenticated payloads accordingly
-- [x] Add support for `INNGEST_SIGNING_KEY_FALLBACK`
-- [x] Try the fallback signing key when primary verification fails
-- [x] Reuse fallback behavior for outbound authenticated API calls
-- [x] Preserve outbound auth header requirements when touching authenticated API calls (`Authorization`, `X-Inngest-Sdk`, `X-Inngest-Req-Version`, `X-Inngest-Env` when available)
-- [x] Report fallback signing key presence in introspection responses
-- [x] Report fallback signing key hash in authenticated introspection responses
-- [x] Populate introspection `env` when available
-- [x] Keep introspection auth metadata schema-limited to spec-defined top-level fields
-- [x] Add tests for cloud/dev verification behavior
-- [x] Add tests for cloud-mode missing-signing-key and missing-signature failure paths
-- [x] Add tests for primary-key and fallback-key verification paths
-- [x] Add tests proving configured mode, not inbound headers, drives sync target selection
+- [X] Stop deriving effective mode from incoming server headers
+- [X] Use SDK configuration and environment to decide cloud vs dev behavior
+- [X] Keep sync targeting driven by configured mode and configured origins, not triggering request headers
+- [X] Reject cloud-mode requests when no signing key is configured
+- [X] Enforce signature presence for cloud mode requests
+- [X] Allow missing signatures in dev mode while still validating when a signature is present
+- [X] Always validate introspection signatures when present and return authenticated vs unauthenticated payloads accordingly
+- [X] Add support for `INNGEST_SIGNING_KEY_FALLBACK`
+- [X] Try the fallback signing key when primary verification fails
+- [X] Reuse fallback behavior for outbound authenticated API calls
+- [X] Preserve outbound auth header requirements when touching authenticated API calls (`Authorization`, `X-Inngest-Sdk`, `X-Inngest-Req-Version`, `X-Inngest-Env` when available)
+- [X] Report fallback signing key presence in introspection responses
+- [X] Report fallback signing key hash in authenticated introspection responses
+- [X] Populate introspection `env` when available
+- [X] Keep introspection auth metadata schema-limited to spec-defined top-level fields
+- [X] Add tests for cloud/dev verification behavior
+- [X] Add tests for cloud-mode missing-signing-key and missing-signature failure paths
+- [X] Add tests for primary-key and fallback-key verification paths
+- [X] Add tests proving configured mode, not inbound headers, drives sync target selection
 
 ** Exit Criteria
-- [x] Incoming request verification is driven by configured mode, not request headers
-- [x] Sync targeting and outbound auth selection are driven by configured mode/origins, not request headers
-- [x] Cloud-mode failures for missing signing key and missing signature match spec expectations
-- [x] Fallback key logic works for both verification and outbound auth
-- [x] Introspection accurately reports auth-related state without leaking non-spec top-level fields
+- [X] Incoming request verification is driven by configured mode, not request headers
+- [X] Sync targeting and outbound auth selection are driven by configured mode/origins, not request headers
+- [X] Cloud-mode failures for missing signing key and missing signature match spec expectations
+- [X] Fallback key logic works for both verification and outbound auth
+- [X] Introspection accurately reports auth-related state without leaking non-spec top-level fields
 
 ** Out of Scope
 - Full call-request execution semantics
