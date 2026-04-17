@@ -95,4 +95,14 @@ jobs:
           toolchain: stable
           override: true
       - name: Test
-        run: cargo test
+        run: cargo test -p inngest --lib
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: DeterminateSystems/nix-installer-action@v22
+      - name: Initialize Nix dev shell
+        run: nix develop -c true
+      - name: Run e2e tests
+        run: nix develop -c make test-e2e

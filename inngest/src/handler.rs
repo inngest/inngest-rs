@@ -497,7 +497,7 @@ impl Handler {
         let mut sync_req = reqwest::Client::new()
             .post(format!(
                 "{}/fn/register",
-                self.inngest.inngest_api_origin(kind)
+                self.inngest.inngest_api_origin(kind).trim_end_matches('/')
             ))
             .json(&req);
 
@@ -518,17 +518,38 @@ impl Handler {
         }
 
         match sync_req.send().await {
-            Ok(resp) => match resp.json::<InngestSyncSuccess>().await {
-                Ok(res) => {
-                    let modified: bool = res.modified.unwrap_or_default();
+            Ok(resp) => {
+                let status = resp.status();
+                let body = match resp.text().await {
+                    Ok(body) => body,
+                    Err(err) => {
+                        return Err(format!("error reading sync response: {}", err));
+                    }
+                };
 
-                    Ok(SyncResponse::OutOfBand(Box::new(OutOfBandSyncResponse {
-                        message: "Successfully synced.".to_string(),
-                        modified,
-                    })))
+                if !status.is_success() {
+                    return Err(format!(
+                        "error registering: status {} body {}",
+                        status.as_u16(),
+                        body
+                    ));
                 }
-                Err(_) => Err("error parsing sync response".to_string()),
-            },
+
+                match serde_json::from_str::<InngestSyncSuccess>(&body) {
+                    Ok(res) => {
+                        let modified: bool = res.modified.unwrap_or_default();
+
+                        Ok(SyncResponse::OutOfBand(Box::new(OutOfBandSyncResponse {
+                            message: "Successfully synced.".to_string(),
+                            modified,
+                        })))
+                    }
+                    Err(err) => Err(format!(
+                        "error parsing sync response: {} body {}",
+                        err, body
+                    )),
+                }
+            }
             Err(err) => {
                 println!("ERROR: {:?}", err);
 
