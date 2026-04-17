@@ -60,11 +60,12 @@ mod state {
     impl InnerState {
         fn new_op(&mut self, id: &str) -> Op {
             let pos = self.indices.entry(id.to_string()).or_insert(0);
-            *pos += 1;
-            Op {
+            let op = Op {
                 id: id.to_string(),
                 pos: *pos,
-            }
+            };
+            *pos += 1;
+            op
         }
     }
 
@@ -122,10 +123,10 @@ pub struct Step {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum StepRunResult<T, E> {
-    Data(T),
-    Error(E),
+#[serde(untagged)]
+enum MemoizedStepResult<T> {
+    Data { data: T },
+    Error { error: StepError },
 }
 
 pub trait UserProvidedError<'a>: StdError + Serialize + Deserialize<'a> + Into<Error> {}
@@ -181,14 +182,11 @@ impl Step {
         let op = self.new_op(id);
         let hashed = op.hash();
 
-        if let Some(Some(stored_value)) = self.remove(&hashed) {
-            let run_result: StepRunResult<T, E> =
-                serde_json::from_value(stored_value).map_err(|e| basic_error!("{}", e))?;
-
-            match run_result {
-                StepRunResult::Data(data) => return Ok(data),
-                StepRunResult::Error(err) => return Err(err.into()),
-            }
+        if let Some(stored_value) = self.remove(&hashed) {
+            return match parse_memoized_step_result(stored_value, "run step")? {
+                MemoizedStepResult::Data { data } => Ok(data),
+                MemoizedStepResult::Error { error } => Err(Error::Dev(DevError::Step(error))),
+            };
         }
 
         // If we're here, we need to execute the function
@@ -348,9 +346,9 @@ impl Step {
         let hashed = op.hash();
 
         match self.get_hashed(&hashed) {
-            Some(resp) => match resp {
-                None => Err(Error::NoInvokeFunctionResponseError),
-                Some(v) => parse_invoke_response(v),
+            Some(resp) => match parse_memoized_step_result(resp, "invoke step")? {
+                MemoizedStepResult::Data { data } => Ok(data),
+                MemoizedStepResult::Error { error } => Err(Error::Dev(DevError::Step(error))),
             },
 
             None => {
@@ -416,29 +414,23 @@ impl Step {
 }
 
 fn parse_invoke_response<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, Error> {
-    #[derive(Deserialize)]
-    struct InvokeErrorBody {
-        message: String,
+    match parse_memoized_step_result(Some(value), "invoke step")? {
+        MemoizedStepResult::Data { data } => Ok(data),
+        MemoizedStepResult::Error { error } => Err(Error::Dev(DevError::Step(error))),
     }
+}
 
-    #[derive(Deserialize)]
-    struct InvokeResponse<T> {
-        data: Option<T>,
-        error: Option<InvokeErrorBody>,
-    }
+fn parse_memoized_step_result<T: for<'de> Deserialize<'de>>(
+    value: Option<Value>,
+    step_kind: &str,
+) -> Result<MemoizedStepResult<T>, Error> {
+    let value = value.ok_or_else(|| {
+        basic_error!("error parsing memoized {step_kind} result: expected wrapped data or error")
+    })?;
 
-    let response = serde_json::from_value::<InvokeResponse<T>>(value)
-        .map_err(|err| basic_error!("error deserializing invoke result: {}", err))?;
-
-    if let Some(data) = response.data {
-        return Ok(data);
-    }
-
-    if let Some(err) = response.error {
-        return Err(basic_error!("{}", err.message));
-    }
-
-    Err(basic_error!("error parsing invoke result: unknown shape"))
+    serde_json::from_value::<MemoizedStepResult<T>>(value).map_err(|err| {
+        basic_error!("error deserializing memoized {step_kind} result: {}", err)
+    })
 }
 
 pub struct WaitForEventOpts {
@@ -470,6 +462,7 @@ impl From<DevError> for StepSendEventError {
     fn from(err: DevError) -> Self {
         let message = match err {
             DevError::Basic(message) => message,
+            DevError::Step(err) => err.to_string(),
             DevError::RetryAt(err) => err.to_string(),
             DevError::NoRetry(err) => err.to_string(),
         };
@@ -502,7 +495,7 @@ impl Op {
         hasher.update(key.as_bytes());
         let res = hasher.finalize();
 
-        base16::encode_upper(res.as_slice())
+        base16::encode_lower(res.as_slice())
     }
 }
 
@@ -526,9 +519,28 @@ mod tests {
         bodies: Arc<Mutex<Vec<Value>>>,
     }
 
-    #[derive(Debug, Deserialize, Serialize)]
+    #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
     struct TestEventData {
         value: String,
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    struct TestStepFailure {
+        message: String,
+    }
+
+    impl Display for TestStepFailure {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.message)
+        }
+    }
+
+    impl StdError for TestStepFailure {}
+
+    impl From<TestStepFailure> for Error {
+        fn from(err: TestStepFailure) -> Self {
+            Error::Dev(DevError::Basic(err.message))
+        }
     }
 
     #[test]
@@ -538,7 +550,7 @@ mod tests {
             pos: 0,
         };
 
-        assert_eq!(op.hash(), "AAF4C61DDCC5E8A2DABEDE0F3B482CD9AEA9434D");
+        assert_eq!(op.hash(), "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
     }
 
     #[test]
@@ -548,7 +560,130 @@ mod tests {
             pos: 1,
         };
 
-        assert_eq!(op.hash(), "20A9BB9477C4AC565CF084D1614C58BBF0A523FF");
+        assert_eq!(op.hash(), "20a9bb9477c4ac565cf084d1614c58bbf0a523ff");
+    }
+
+    #[test]
+    fn repeated_step_ids_start_without_a_suffix() {
+        let state = state::State::new(&HashMap::new());
+
+        let first = state.new_op("hello");
+        let second = state.new_op("hello");
+        let third = state.new_op("hello");
+
+        assert_eq!(first.hash(), "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
+        assert_eq!(second.hash(), "20a9bb9477c4ac565cf084d1614c58bbf0a523ff");
+        assert_eq!(third.hash(), "7db70735b4beeadfd5cccfe4a5eb48b71acfb404");
+    }
+
+    #[tokio::test]
+    async fn run_reuses_wrapped_memoized_data() {
+        let client = Inngest::new("test-app");
+        let state = HashMap::from([(
+            "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string(),
+            Some(json!({ "data": { "value": "hello" } })),
+        )]);
+        let step = Step::new(client, &state);
+
+        let result: TestEventData = step
+            .run("hello", || async {
+                Err::<TestEventData, TestStepFailure>(TestStepFailure {
+                    message: "step should not rerun".to_string(),
+                })
+            })
+            .await
+            .expect("memoized step should return stored data");
+
+        assert_eq!(
+            result,
+            TestEventData {
+                value: "hello".to_string(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn run_surfaces_wrapped_memoized_errors_as_step_errors() {
+        let client = Inngest::new("test-app");
+        let state = HashMap::from([(
+            "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string(),
+            Some(json!({
+                "error": {
+                    "name": "StepError",
+                    "message": "memoized failure",
+                    "stack": "trace"
+                }
+            })),
+        )]);
+        let step = Step::new(client, &state);
+
+        let result: Result<TestEventData, Error> = step
+            .run("hello", || async {
+                Err::<TestEventData, TestStepFailure>(TestStepFailure {
+                    message: "step should not rerun".to_string(),
+                })
+            })
+            .await;
+
+        match result {
+            Err(Error::Dev(DevError::Step(err))) => {
+                assert_eq!(err.name, "StepError");
+                assert_eq!(err.message, "memoized failure");
+                assert_eq!(err.stack.as_deref(), Some("trace"));
+            }
+            other => panic!("expected memoized step error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wait_for_event_uses_raw_memoized_event_payload() {
+        let client = Inngest::new("test-app");
+        let state = HashMap::from([(
+            "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string(),
+            Some(json!({
+                "name": "test/wait",
+                "id": "evt-1",
+                "data": { "value": "hello" },
+                "ts": 1
+            })),
+        )]);
+        let step = Step::new(client, &state);
+
+        let result = step
+            .wait_for_event::<TestEventData>(
+                "hello",
+                WaitForEventOpts {
+                    event: "test/wait".to_string(),
+                    timeout: Duration::from_secs(1),
+                    if_exp: None,
+                },
+            )
+            .expect("memoized wait should deserialize the raw event");
+
+        let event = result.expect("memoized wait should return an event");
+        assert_eq!(event.id.as_deref(), Some("evt-1"));
+        assert_eq!(event.data.value, "hello");
+    }
+
+    #[test]
+    fn wait_for_event_preserves_null_timeout_values() {
+        let client = Inngest::new("test-app");
+        let state =
+            HashMap::from([("aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string(), None)]);
+        let step = Step::new(client, &state);
+
+        let result = step
+            .wait_for_event::<TestEventData>(
+                "hello",
+                WaitForEventOpts {
+                    event: "test/wait".to_string(),
+                    timeout: Duration::from_secs(1),
+                    if_exp: None,
+                },
+            )
+            .expect("timed out waits should decode to None");
+
+        assert!(result.is_none());
     }
 
     #[tokio::test]
@@ -657,13 +792,17 @@ mod tests {
     fn invoke_response_returns_error_field() {
         let response = parse_invoke_response::<String>(json!({
             "error": {
-                "message": "invoke failed"
+                "name": "StepError",
+                "message": "invoke failed",
+                "stack": "trace"
             }
         }));
 
         match response {
-            Err(Error::Dev(DevError::Basic(message))) => {
-                assert_eq!(message, "invoke failed");
+            Err(Error::Dev(DevError::Step(err))) => {
+                assert_eq!(err.name, "StepError");
+                assert_eq!(err.message, "invoke failed");
+                assert_eq!(err.stack.as_deref(), Some("trace"));
             }
             other => panic!("expected invoke error, got {other:?}"),
         }

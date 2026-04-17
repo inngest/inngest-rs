@@ -1,4 +1,5 @@
 use std::{
+    error::Error as StdError,
     fmt::{Debug, Display},
     time::Duration,
 };
@@ -8,7 +9,7 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::{
@@ -27,6 +28,8 @@ pub struct SdkResponse {
 pub enum DevError {
     /// A catch-all error type for business logic errors
     Basic(String),
+    /// A memoized step error surfaced back through replay.
+    Step(StepError),
     /// Error that controls how the function will be retried
     RetryAt(RetryAfterError),
     /// Error that does not allow the function to be retried
@@ -151,6 +154,9 @@ impl IntoResponse for Error {
                     None,
                     StepError::new("Error", msg),
                 ),
+                DevError::Step(err) => {
+                    call_error_response(headers, StatusCode::BAD_REQUEST, true, None, err)
+                }
                 DevError::RetryAt(retry) => {
                     let retry_after = HeaderValue::from(retry.after.as_secs());
 
@@ -223,7 +229,7 @@ fn call_error_response(
 }
 
 /// A serializable error payload returned to Inngest on failed calls.
-#[derive(Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq)]
 pub struct StepError {
     pub name: String,
     pub message: String,
@@ -235,7 +241,7 @@ pub struct StepError {
 }
 
 impl StepError {
-    fn new(name: impl Into<String>, message: impl Into<String>) -> Self {
+    pub(crate) fn new(name: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             message: message.into(),
@@ -244,6 +250,14 @@ impl StepError {
         }
     }
 }
+
+impl Display for StepError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.name, self.message)
+    }
+}
+
+impl StdError for StepError {}
 
 /// A retriable developer error that asks Inngest to delay the next attempt.
 pub struct RetryAfterError {
@@ -364,6 +378,33 @@ mod tests {
                 "name": "NonRetryableError",
                 "message": "stop",
                 "stack": "because"
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn memoized_step_errors_return_bad_request_and_preserve_shape() {
+        let response = Error::Dev(DevError::Step(StepError {
+            name: "StepError".to_string(),
+            message: "step failed".to_string(),
+            stack: Some("trace".to_string()),
+            data: Some(json!({ "ignored": true })),
+        }))
+        .into_response();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers().get(header::INNGEST_NO_RETRY).unwrap(),
+            HeaderValue::from_static("true")
+        );
+        assert!(response.headers().get(header::RETRY_AFTER).is_none());
+
+        assert_eq!(
+            response_json(response).await,
+            json!({
+                "name": "StepError",
+                "message": "step failed",
+                "stack": "trace"
             })
         );
     }
