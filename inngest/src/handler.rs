@@ -71,6 +71,14 @@ impl DynamicServableFn {
     }
 }
 
+pub struct RegisteredFn(DynamicServableFn);
+
+impl RegisteredFn {
+    fn into_dynamic(self) -> DynamicServableFn {
+        self.0
+    }
+}
+
 impl<T, E> From<ServableFn<T, E>> for DynamicServableFn
 where
     T: InngestEvent + Send,
@@ -180,6 +188,16 @@ where
     }
 }
 
+impl<T, E> From<ServableFn<T, E>> for RegisteredFn
+where
+    T: InngestEvent + Send,
+    E: Into<Error> + 'static,
+{
+    fn from(func: ServableFn<T, E>) -> Self {
+        Self(DynamicServableFn::from(func))
+    }
+}
+
 pub struct Handler {
     inngest: Inngest,
     signing_key: Option<String>,
@@ -252,13 +270,13 @@ impl Handler {
         self.funcs.insert(func.slug(), func);
     }
 
-    pub fn register_fns<T, E>(&mut self, funcs: Vec<ServableFn<T, E>>)
+    pub fn register_fns<I>(&mut self, funcs: I)
     where
-        T: InngestEvent + Send,
-        E: Into<Error> + 'static,
+        I: IntoIterator<Item = RegisteredFn>,
     {
         for f in funcs {
-            self.register_fn(f);
+            let func = f.into_dynamic();
+            self.funcs.insert(func.slug(), func);
         }
     }
 
@@ -654,7 +672,6 @@ mod tests {
             },
         );
         let first_fn_id = first_fn.slug();
-        handler.register_fn(first_fn);
 
         let second_fn: ServableFn<SecondEvent, Error> = client.create_function(
             FunctionOpts::new("second"),
@@ -664,7 +681,8 @@ mod tests {
             },
         );
         let second_fn_id = second_fn.slug();
-        handler.register_fn(second_fn);
+
+        handler.register_fns(vec![first_fn.into(), second_fn.into()]);
 
         let headers = Headers::from(HeaderMap::new());
 

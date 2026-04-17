@@ -19,11 +19,13 @@ async fn main() {
 
     let client = Inngest::new("rust-dev");
     let mut inngest_handler = Handler::new(&client);
-    inngest_handler.register_fn(dummy_fn(&client));
-    inngest_handler.register_fn(hello_fn(&client));
-    inngest_handler.register_fn(step_run(&client));
-    inngest_handler.register_fn(fallible_step_run(&client));
-    inngest_handler.register_fn(incorrectly_propagates_error(&client));
+    inngest_handler.register_fns(vec![
+        dummy_fn(&client).into(),
+        hello_fn(&client).into(),
+        step_run(&client).into(),
+        fallible_step_run(&client).into(),
+        incorrectly_propagates_error(&client).into(),
+    ]);
 
     let inngest_state = Arc::new(inngest_handler);
 
