@@ -55,6 +55,7 @@ mod state {
         indices: HashMap<String, u64>,
         genop: Vec<GeneratorOpCode>,
         error: Option<StepError>,
+        missing_step: Option<String>,
     }
 
     impl InnerState {
@@ -82,6 +83,7 @@ mod state {
                     indices: HashMap::new(),
                     genop: Vec::new(),
                     error: None,
+                    missing_step: None,
                 })),
             }
         }
@@ -106,6 +108,14 @@ mod state {
             self.inner.write().unwrap().error = Some(err);
         }
 
+        pub fn missing_step(&self) -> Option<String> {
+            self.inner.read().unwrap().missing_step.clone()
+        }
+
+        pub fn push_missing_step(&self, id: String) {
+            self.inner.write().unwrap().missing_step = Some(id);
+        }
+
         pub fn remove(&self, key: &str) -> Option<Option<Value>> {
             self.inner.write().unwrap().state.remove(key)
         }
@@ -120,6 +130,7 @@ mod state {
 pub struct Step {
     client: Inngest,
     state: state::State,
+    target_step_id: String,
 }
 
 #[derive(Deserialize)]
@@ -138,10 +149,15 @@ impl<E> UserProvidedError<'_> for E where
 
 impl Step {
     /// Creates a step helper for the current function execution.
-    pub(crate) fn new(client: Inngest, state: &HashMap<String, Option<Value>>) -> Self {
+    pub(crate) fn new(
+        client: Inngest,
+        state: &HashMap<String, Option<Value>>,
+        target_step_id: &str,
+    ) -> Self {
         Step {
             client,
             state: State::new(state),
+            target_step_id: target_step_id.to_string(),
         }
     }
 
@@ -157,6 +173,10 @@ impl Step {
         self.state.genop()
     }
 
+    pub(crate) fn missing_step(&self) -> Option<String> {
+        self.state.missing_step()
+    }
+
     fn remove(&self, key: &str) -> Option<Option<Value>> {
         self.state.remove(key)
     }
@@ -167,6 +187,10 @@ impl Step {
 
     fn push_error(&self, err: StepError) {
         self.state.push_error(err);
+    }
+
+    fn push_missing_step(&self, id: String) {
+        self.state.push_missing_step(id);
     }
 
     fn get_hashed(&self, key: &str) -> Option<Option<Value>> {
@@ -187,6 +211,11 @@ impl Step {
                 MemoizedStepResult::Data { data } => Ok(data),
                 MemoizedStepResult::Error { error } => Err(Error::Dev(DevError::Step(error))),
             };
+        }
+
+        if self.target_step_id != "step" && self.target_step_id != hashed {
+            self.push_missing_step(self.target_step_id.clone());
+            return Err(Error::Interrupt(FlowControlError::step_generator()));
         }
 
         // If we're here, we need to execute the function
@@ -583,7 +612,7 @@ mod tests {
             "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string(),
             Some(json!({ "data": { "value": "hello" } })),
         )]);
-        let step = Step::new(client, &state);
+        let step = Step::new(client, &state, "step");
 
         let result: TestEventData = step
             .run("hello", || async {
@@ -615,7 +644,7 @@ mod tests {
                 }
             })),
         )]);
-        let step = Step::new(client, &state);
+        let step = Step::new(client, &state, "step");
 
         let result: Result<TestEventData, Error> = step
             .run("hello", || async {
@@ -647,7 +676,7 @@ mod tests {
                 "ts": 1
             })),
         )]);
-        let step = Step::new(client, &state);
+        let step = Step::new(client, &state, "step");
 
         let result = step
             .wait_for_event::<TestEventData>(
@@ -670,7 +699,7 @@ mod tests {
         let client = Inngest::new("test-app");
         let state =
             HashMap::from([("aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string(), None)]);
-        let step = Step::new(client, &state);
+        let step = Step::new(client, &state, "step");
 
         let result = step
             .wait_for_event::<TestEventData>(
@@ -692,7 +721,7 @@ mod tests {
         let client = Inngest::new("test-app")
             .event_api_origin(&server.url)
             .event_key("test-key");
-        let step = Step::new(client.clone(), &HashMap::new());
+        let step = Step::new(client.clone(), &HashMap::new(), "step");
 
         let first = step
             .send_event(
@@ -719,7 +748,7 @@ mod tests {
             step.genop()[0].id.clone(),
             Some(json!({ "data": ["evt-1"] })),
         )]);
-        let memoized_step = Step::new(client, &stored);
+        let memoized_step = Step::new(client, &stored, "step");
         let second = memoized_step
             .send_event(
                 "send-test",
@@ -743,7 +772,7 @@ mod tests {
         let client = Inngest::new("test-app")
             .event_api_origin(&server.url)
             .event_key("test-key");
-        let step = Step::new(client, &HashMap::new());
+        let step = Step::new(client, &HashMap::new(), "step");
 
         let result = step
             .send_events(

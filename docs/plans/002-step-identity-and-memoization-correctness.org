@@ -30,15 +30,15 @@
 - [X] Preserve original serialized memoized step errors when surfaced back to Inngest
 - [X] Mark unhandled memoized step errors as non-retriable
 - [ ] Ensure memoized steps are never re-reported
-- [ ] Apply the same memoization decoding rules to inline `steps` payloads and `ctx.use_api` fetched step state
-- [ ] Ensure targeted step execution finds the requested hashed step or returns `StepNotFound`
+- [X] Apply the same memoization decoding rules to inline `steps` payloads and `ctx.use_api` fetched step state
+- [X] Ensure targeted step execution finds the requested hashed step or returns `StepNotFound`
 - [ ] Follow `ctx.stack.stack` ordering when memoizing prior steps
 - [ ] Warn and fall back to earliest-match recovery when stack-ordered memoization cannot be satisfied
 - [X] Add unit tests for step hashing and repeated IDs
 - [X] Add unit tests for memoized success and error decoding
 - [X] Add unit tests for wait-for-event raw payload and `null` timeout decoding
-- [ ] Add unit tests for `ctx.use_api` memoization parity
-- [ ] Add unit tests for targeted `stepId` lookup and `StepNotFound`
+- [X] Add unit tests for `ctx.use_api` memoization parity
+- [X] Add unit tests for targeted `stepId` lookup and `StepNotFound`
 - [ ] Add unit tests for stack-ordered memoization and recovery fallback
 - [ ] Add an e2e test for repeated step IDs replaying with distinct memoized results
 - [ ] Add an e2e test for memoized step-error replay without rerunning the failed step body
