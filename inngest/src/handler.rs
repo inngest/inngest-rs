@@ -370,10 +370,9 @@ impl Handler {
         let has_signing_key = self.has_signing_key();
         let has_signing_key_fallback = self.has_signing_key_fallback();
         let schema_version = PROBE_SCHEMA_VERSION.to_string();
-        let authentication_succeeded = match headers.signature() {
-            Some(sig) => Some(self.verify_signature(&sig, raw_body).is_ok()),
-            None => None,
-        };
+        let authentication_succeeded = headers
+            .signature()
+            .map(|sig| self.verify_signature(&sig, raw_body).is_ok());
 
         if authentication_succeeded == Some(true) {
             let api_origin = match self.inngest.api_origin.clone() {
@@ -718,12 +717,22 @@ pub struct InngestSyncSuccess {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        extract::State,
+        http::{HeaderMap, StatusCode, Uri},
+        routing::post,
+        Router,
+    };
     use crate::function::ServableFn;
-    use axum::http::HeaderMap;
     use hmac::{Hmac, Mac};
     use serde::{Deserialize, Serialize};
-    use std::collections::HashSet;
+    use std::{
+        collections::{HashSet, VecDeque},
+        net::TcpListener,
+        sync::Arc,
+    };
     use sha2::Sha256;
+    use tokio::sync::Mutex;
 
     #[derive(Debug, Deserialize, Serialize)]
     struct FirstEvent {
@@ -739,6 +748,22 @@ mod tests {
         "signkey-test-8ee2262a15e8d3c42d6a840db7af3de2aab08ef632b32a37a687f24b34dba3ff";
     const FALLBACK_SIGNING_KEY: &str =
         "signkey-test-1111111111111111111111111111111111111111111111111111111111111111";
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    struct SyncRequestRecord {
+        authorization: Option<String>,
+        env: Option<String>,
+        path: String,
+        query: Option<String>,
+        req_version: Option<String>,
+        sdk: Option<String>,
+    }
+
+    #[derive(Clone)]
+    struct SyncServerState {
+        records: Arc<Mutex<Vec<SyncRequestRecord>>>,
+        responses: Arc<Mutex<VecDeque<(StatusCode, String)>>>,
+    }
 
     #[tokio::test]
     async fn handler_dispatches_functions_with_different_event_types() {
@@ -1171,6 +1196,94 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn sync_uses_configured_api_origin_even_when_request_header_says_dev() {
+        let (origin, records) = spawn_sync_server(vec![(StatusCode::OK, sync_success_body())]).await;
+        let client = Inngest::new("test-app").api_origin(&origin);
+        let (handler, _fn_id) = registered_handler(client, None, None);
+        let headers = headers(&[(header::INNGEST_SERVER_KIND, "dev")]);
+
+        let result = handler
+            .sync(
+                &headers,
+                &SyncQueryParams {
+                    deploy_id: Some("deploy-123".to_string()),
+                },
+                "axum",
+            )
+            .await
+            .expect("sync should use the configured API origin");
+
+        match result {
+            SyncResponse::OutOfBand(result) => assert!(result.modified),
+            SyncResponse::InBand(_) => panic!("sync should use the out-of-band response"),
+        }
+
+        let records = records.lock().await;
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].path, "/fn/register");
+        assert_eq!(records[0].query, Some("deployId=deploy-123".to_string()));
+    }
+
+    #[tokio::test]
+    async fn sync_retries_with_fallback_signing_key_and_sets_protocol_headers() {
+        let (origin, records) = spawn_sync_server(vec![
+            (StatusCode::UNAUTHORIZED, "{\"error\":\"unauthorized\"}".to_string()),
+            (StatusCode::OK, sync_success_body()),
+        ])
+        .await;
+        let client = Inngest::new("test-app")
+            .api_origin(&origin)
+            .env("branch");
+        let (handler, _fn_id) = registered_handler(
+            client,
+            Some(PRIMARY_SIGNING_KEY),
+            Some(FALLBACK_SIGNING_KEY),
+        );
+
+        let result = handler
+            .sync(
+                &Headers::from(HeaderMap::new()),
+                &SyncQueryParams { deploy_id: None },
+                "axum",
+            )
+            .await
+            .expect("sync should retry with the fallback signing key");
+
+        match result {
+            SyncResponse::OutOfBand(result) => assert!(result.modified),
+            SyncResponse::InBand(_) => panic!("sync should use the out-of-band response"),
+        }
+
+        let records = records.lock().await;
+        assert_eq!(records.len(), 2);
+        assert_eq!(
+            records[0].authorization,
+            Some(format!(
+                "Bearer {}",
+                Signature::new(PRIMARY_SIGNING_KEY)
+                    .hash()
+                    .expect("primary signing key should hash"),
+            ))
+        );
+        assert_eq!(
+            records[1].authorization,
+            Some(format!(
+                "Bearer {}",
+                Signature::new(FALLBACK_SIGNING_KEY)
+                    .hash()
+                    .expect("fallback signing key should hash"),
+            ))
+        );
+        assert_eq!(records[0].sdk, Some(crate::version::sdk()));
+        assert_eq!(
+            records[0].req_version,
+            Some(crate::version::EXECUTION_VERSION.to_string())
+        );
+        assert_eq!(records[0].env, Some("branch".to_string()));
+        assert_eq!(records[1].env, Some("branch".to_string()));
+    }
+
     fn event_body(name: &str, data: Value) -> Value {
         json!({
             "ctx": { "attempt": 1, "env": "test", "run_id": "run-1" },
@@ -1250,5 +1363,64 @@ mod tests {
         let sum = mac.finalize();
         let signature = base16::encode_lower(&sum.into_bytes());
         format!("t={timestamp}&s={signature}")
+    }
+
+    async fn spawn_sync_server(
+        responses: Vec<(StatusCode, String)>,
+    ) -> (String, Arc<Mutex<Vec<SyncRequestRecord>>>) {
+        let records = Arc::new(Mutex::new(Vec::new()));
+        let state = SyncServerState {
+            records: Arc::clone(&records),
+            responses: Arc::new(Mutex::new(VecDeque::from(responses))),
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
+        let addr = listener.local_addr().expect("listener addr should exist");
+        let app = Router::new()
+            .route("/fn/register", post(record_sync_request))
+            .with_state(state);
+
+        tokio::spawn(async move {
+            axum::Server::from_tcp(listener)
+                .expect("server should bind")
+                .serve(app.into_make_service())
+                .await
+                .expect("server should serve");
+        });
+
+        (format!("http://{}", addr), records)
+    }
+
+    async fn record_sync_request(
+        State(state): State<SyncServerState>,
+        headers: HeaderMap,
+        uri: Uri,
+    ) -> (StatusCode, String) {
+        state.records.lock().await.push(SyncRequestRecord {
+            authorization: header_value(&headers, "authorization"),
+            env: header_value(&headers, header::INNGEST_ENV),
+            path: uri.path().to_string(),
+            query: uri.query().map(|query| query.to_string()),
+            req_version: header_value(&headers, header::INNGEST_REQ_VERSION),
+            sdk: header_value(&headers, header::INNGEST_SDK),
+        });
+
+        state
+            .responses
+            .lock()
+            .await
+            .pop_front()
+            .unwrap_or((StatusCode::OK, sync_success_body()))
+    }
+
+    fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(|value| value.to_string())
+    }
+
+    fn sync_success_body() -> String {
+        "{\"ok\":true,\"modified\":true}".to_string()
     }
 }
