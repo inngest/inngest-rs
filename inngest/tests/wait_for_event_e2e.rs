@@ -1,8 +1,6 @@
 mod e2e_support;
 
-use e2e_support::{
-    spawn_app, wait_for_run_status, wait_for_state, DevServer, DevServerLock,
-};
+use e2e_support::{spawn_app, wait_for_run_status, wait_for_state, DevServer, DevServerLock};
 use inngest::{
     client::Inngest,
     event::Event,
@@ -160,10 +158,7 @@ async fn wait_for_event_times_out_without_a_match() {
     app.sync().await;
 
     client
-        .send_event(&Event::new(
-            &base_event_name,
-            WaitForEventData { value: 7 },
-        ))
+        .send_event(&Event::new(&base_event_name, WaitForEventData { value: 7 }))
         .await
         .expect("base event should send successfully");
 

@@ -537,12 +537,12 @@ impl Handler {
 
                 match serde_json::from_str::<InngestSyncSuccess>(&body) {
                     Ok(res) => {
-                    let modified: bool = res.modified.unwrap_or_default();
+                        let modified: bool = res.modified.unwrap_or_default();
 
-                    Ok(SyncResponse::OutOfBand(Box::new(OutOfBandSyncResponse {
-                        message: "Successfully synced.".to_string(),
-                        modified,
-                    })))
+                        Ok(SyncResponse::OutOfBand(Box::new(OutOfBandSyncResponse {
+                            message: "Successfully synced.".to_string(),
+                            modified,
+                        })))
                     }
                     Err(err) => Err(format!(
                         "error parsing sync response: {} body {}",

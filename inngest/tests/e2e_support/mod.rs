@@ -51,7 +51,11 @@ impl AppServer {
             .await
             .expect("sync response body should be readable");
 
-        assert!(status.is_success(), "sync request failed with status {}", status);
+        assert!(
+            status.is_success(),
+            "sync request failed with status {}",
+            status
+        );
 
         serde_json::from_str::<Value>(&body).unwrap_or_else(|_| {
             panic!("sync request returned a non-JSON body: {body}");
@@ -126,10 +130,7 @@ impl Drop for DevServerLock {
     }
 }
 
-pub async fn spawn_app(
-    client: Inngest,
-    funcs: Vec<inngest::handler::RegisteredFn>,
-) -> AppServer {
+pub async fn spawn_app(client: Inngest, funcs: Vec<inngest::handler::RegisteredFn>) -> AppServer {
     let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
     let addr = listener
         .local_addr()

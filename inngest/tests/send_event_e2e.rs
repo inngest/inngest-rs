@@ -1,8 +1,7 @@
 mod e2e_support;
 
 use e2e_support::{
-    spawn_app, wait_for_event_runs, wait_for_run_status, wait_for_state, DevServer,
-    DevServerLock,
+    spawn_app, wait_for_event_runs, wait_for_run_status, wait_for_state, DevServer, DevServerLock,
 };
 use inngest::{
     client::Inngest,
