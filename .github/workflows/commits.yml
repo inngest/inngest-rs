@@ -1,15 +1,12 @@
-name: PR Conventional Commit Validation
+name: Conventional Commits
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
-permissions:
-  contents: read
-  issues: write
-
 jobs:
   validate-pr-title:
+    name: Validate title
     runs-on: ubuntu-latest
     steps:
       # ref: https://github.com/marketplace/actions/conventional-commit-in-pull-requests
