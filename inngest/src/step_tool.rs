@@ -350,10 +350,7 @@ impl Step {
         match self.get_hashed(&hashed) {
             Some(resp) => match resp {
                 None => Err(Error::NoInvokeFunctionResponseError),
-                Some(v) => match serde_json::from_value::<T>(v.clone()) {
-                    Ok(res) => Ok(res),
-                    Err(err) => Err(basic_error!("error deserializing invoke result: {}", err)),
-                },
+                Some(v) => parse_invoke_response(v),
             },
 
             None => {
@@ -416,6 +413,32 @@ impl Step {
         })
         .await
     }
+}
+
+fn parse_invoke_response<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, Error> {
+    #[derive(Deserialize)]
+    struct InvokeErrorBody {
+        message: String,
+    }
+
+    #[derive(Deserialize)]
+    struct InvokeResponse<T> {
+        data: Option<T>,
+        error: Option<InvokeErrorBody>,
+    }
+
+    let response = serde_json::from_value::<InvokeResponse<T>>(value)
+        .map_err(|err| basic_error!("error deserializing invoke result: {}", err))?;
+
+    if let Some(data) = response.data {
+        return Ok(data);
+    }
+
+    if let Some(err) = response.error {
+        return Err(basic_error!("{}", err.message));
+    }
+
+    Err(basic_error!("error parsing invoke result: unknown shape"))
 }
 
 pub struct WaitForEventOpts {
@@ -618,6 +641,32 @@ mod tests {
         assert_eq!(bodies.len(), 1);
         assert!(bodies[0].is_array());
         assert_eq!(bodies[0].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn invoke_response_returns_data_field() {
+        let response = parse_invoke_response::<String>(json!({
+            "data": "hello"
+        }))
+        .expect("invoke response should deserialize data");
+
+        assert_eq!(response, "hello");
+    }
+
+    #[test]
+    fn invoke_response_returns_error_field() {
+        let response = parse_invoke_response::<String>(json!({
+            "error": {
+                "message": "invoke failed"
+            }
+        }));
+
+        match response {
+            Err(Error::Dev(DevError::Basic(message))) => {
+                assert_eq!(message, "invoke failed");
+            }
+            other => panic!("expected invoke error, got {other:?}"),
+        }
     }
 
     struct TestServer {
