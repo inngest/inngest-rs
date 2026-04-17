@@ -1,4 +1,5 @@
 use crate::{
+    client::Inngest,
     event::{Event, InngestEvent},
     step_tool::Step as StepTool,
 };
@@ -61,6 +62,7 @@ type Func<T, E> =
 
 pub struct ServableFn<T: 'static, E> {
     pub(crate) app_id: String,
+    pub(crate) client: Inngest,
     pub opts: FunctionOpts,
     pub trigger: Trigger,
     pub func: Box<Func<T, E>>,
