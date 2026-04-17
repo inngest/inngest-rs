@@ -2,6 +2,10 @@
 dev:
 	cargo run -p inngest --example axum
 
+.PHONY: send-events
+send-events:
+	INNGEST_DEV=http://127.0.0.1:8288 cargo run -p inngest --example send_events
+
 .PHONY: test
 test:
 	cargo test
@@ -24,4 +28,4 @@ bump-version:
 
 .PHONY: inngest-dev
 inngest-dev:
-	inngest-cli dev -v -u http://127.0.0.1:3000/api/inngest
+	inngest dev -v -u http://127.0.0.1:3000/api/inngest

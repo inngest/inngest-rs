@@ -38,7 +38,7 @@ Use standard conventional commit formatting such as `fix(promapi): handle empty 
 - `cargo check -p inngest` checks the crate without running tests
 - `cargo build -p inngest` builds the crate
 - `make dev` runs the `axum` example via `cargo run -p inngest --example axum`
-- `make inngest-dev` starts `inngest-cli` against `http://127.0.0.1:3000/api/inngest`
+- `make inngest-dev` starts `inngest` against `http://127.0.0.1:3000/api/inngest`
 
 ### Testing and Quality
 
