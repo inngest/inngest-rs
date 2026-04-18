@@ -273,7 +273,10 @@ impl Step {
                     name: id.to_string(),
                     display_name: id.to_string(),
                     data: None,
-                    error: Some(step_error_from_user_error::<E>(err.to_string(), serialized_err)),
+                    error: Some(step_error_from_user_error::<E>(
+                        err.to_string(),
+                        serialized_err,
+                    )),
                     opts: json!({}),
                 });
                 Err(Error::Interrupt(FlowControlError::step_generator()))
@@ -681,7 +684,10 @@ mod tests {
             &[first.clone(), second.clone()],
         );
 
-        assert_eq!(state.take_memoized(&first), Some(Some(json!({ "data": "first" }))));
+        assert_eq!(
+            state.take_memoized(&first),
+            Some(Some(json!({ "data": "first" })))
+        );
         assert_eq!(
             state.take_memoized(&second),
             Some(Some(json!({ "data": "second" })))
@@ -703,10 +709,19 @@ mod tests {
             &[first.clone(), second.clone(), third.clone()],
         );
 
-        assert_eq!(state.take_memoized(&second), Some(Some(json!({ "data": "second" }))));
+        assert_eq!(
+            state.take_memoized(&second),
+            Some(Some(json!({ "data": "second" })))
+        );
         assert!(state.recovery_mode());
-        assert_eq!(state.take_memoized(&first), Some(Some(json!({ "data": "first" }))));
-        assert_eq!(state.take_memoized(&third), Some(Some(json!({ "data": "third" }))));
+        assert_eq!(
+            state.take_memoized(&first),
+            Some(Some(json!({ "data": "first" })))
+        );
+        assert_eq!(
+            state.take_memoized(&third),
+            Some(Some(json!({ "data": "third" })))
+        );
     }
 
     #[tokio::test]

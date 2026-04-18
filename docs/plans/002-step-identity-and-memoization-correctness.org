@@ -1,6 +1,6 @@
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-16
-#+STATUS: In Progress
+#+STATUS: Done
 
 * Milestone 002: Step Identity and Memoization Correctness
 
@@ -29,7 +29,7 @@
 - [X] Represent memoized step errors in a structured internal type
 - [X] Preserve original serialized memoized step errors when surfaced back to Inngest
 - [X] Mark unhandled memoized step errors as non-retriable
-- [ ] Ensure memoized steps are never re-reported
+- [X] Ensure memoized steps are never re-reported
 - [X] Apply the same memoization decoding rules to inline `steps` payloads and `ctx.use_api` fetched step state
 - [X] Ensure targeted step execution finds the requested hashed step or returns `StepNotFound`
 - [X] Follow `ctx.stack.stack` ordering when memoizing prior steps
@@ -41,16 +41,16 @@
 - [X] Add unit tests for targeted `stepId` lookup and `StepNotFound`
 - [X] Add unit tests for stack-ordered memoization and recovery fallback
 - [X] Add an e2e test for repeated step IDs replaying with distinct memoized results
-- [ ] Add an e2e test for memoized step-error replay without rerunning the failed step body
+- [X] Add an e2e test for memoized step-error replay without rerunning the failed step body
 - [X] Add an e2e test for invoke failure replay and memoized error surfacing
 - [X] Add an e2e test for durable multi-event send replay returning all emitted IDs
 - [X] Add an e2e test for `sleep_until` resume behavior
 
 ** Exit Criteria
-- [ ] Step IDs are stable and spec-correct across repeated executions
-- [ ] Memoized step state is interpreted consistently across supported step types and sources
-- [ ] Targeted hashed-step execution is deterministic and spec-correct
-- [ ] Tests cover hashing, memoization, targeted lookup, stack-order recovery, and key e2e replay invariants
+- [X] Step IDs are stable and spec-correct across repeated executions
+- [X] Memoized step state is interpreted consistently across supported step types and sources
+- [X] Targeted hashed-step execution is deterministic and spec-correct
+- [X] Tests cover hashing, memoization, targeted lookup, stack-order recovery, and key e2e replay invariants
 
 ** Out of Scope
 - Step planning
