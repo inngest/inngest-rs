@@ -23,6 +23,7 @@ use crate::{
 #[derive(Serialize, Clone)]
 enum Opcode {
     StepRun,
+    StepError,
     Sleep,
     WaitForEvent,
     InvokeFunction,
@@ -36,16 +37,23 @@ pub(crate) struct GeneratorOpCode {
     name: String,
     #[serde(rename(serialize = "displayName"))]
     display_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<StepError>,
+    #[serde(skip_serializing_if = "is_empty_object")]
     opts: Value,
+}
+
+fn is_empty_object(value: &Value) -> bool {
+    matches!(value, Value::Object(map) if map.is_empty())
 }
 
 mod state {
     use super::{GeneratorOpCode, Op};
-    use crate::result::StepError;
     use serde_json::Value;
     use std::{
-        collections::HashMap,
+        collections::{HashMap, VecDeque},
         sync::{Arc, RwLock},
     };
 
@@ -53,8 +61,9 @@ mod state {
     struct InnerState {
         state: HashMap<String, Option<Value>>,
         indices: HashMap<String, u64>,
+        stack: VecDeque<String>,
+        recovery_mode: bool,
         genop: Vec<GeneratorOpCode>,
-        error: Option<StepError>,
         missing_step: Option<String>,
     }
 
@@ -76,13 +85,14 @@ mod state {
     }
 
     impl State {
-        pub fn new(state: &HashMap<String, Option<Value>>) -> Self {
+        pub fn new(state: &HashMap<String, Option<Value>>, stack: &[String]) -> Self {
             State {
                 inner: Arc::new(RwLock::new(InnerState {
                     state: state.clone(),
                     indices: HashMap::new(),
+                    stack: VecDeque::from(stack.to_vec()),
+                    recovery_mode: false,
                     genop: Vec::new(),
-                    error: None,
                     missing_step: None,
                 })),
             }
@@ -100,14 +110,6 @@ mod state {
             self.inner.read().unwrap().genop.clone()
         }
 
-        pub fn error(&self) -> Option<StepError> {
-            self.inner.read().unwrap().error.clone()
-        }
-
-        pub fn push_error(&self, err: StepError) {
-            self.inner.write().unwrap().error = Some(err);
-        }
-
         pub fn missing_step(&self) -> Option<String> {
             self.inner.read().unwrap().missing_step.clone()
         }
@@ -116,13 +118,50 @@ mod state {
             self.inner.write().unwrap().missing_step = Some(id);
         }
 
-        pub fn remove(&self, key: &str) -> Option<Option<Value>> {
-            self.inner.write().unwrap().state.remove(key)
+        pub fn take_memoized(&self, key: &str) -> Option<Option<Value>> {
+            let mut inner = self.inner.write().unwrap();
+
+            if !inner.state.contains_key(key) {
+                return None;
+            }
+
+            if inner.stack.is_empty() {
+                return inner.state.remove(key);
+            }
+
+            if inner.recovery_mode {
+                remove_first_match(&mut inner.stack, key);
+                return inner.state.remove(key);
+            }
+
+            if inner.stack.front().map(|id| id == key).unwrap_or(false) {
+                inner.stack.pop_front();
+                return inner.state.remove(key);
+            }
+
+            if remove_first_match(&mut inner.stack, key) {
+                inner.recovery_mode = true;
+                eprintln!(
+                    "warning: memoized step order diverged from ctx.stack.stack; entering recovery mode"
+                );
+                return inner.state.remove(key);
+            }
+
+            inner.state.remove(key)
         }
 
-        pub fn get_hashed(&self, key: &str) -> Option<Option<Value>> {
-            self.inner.read().unwrap().state.get(key).cloned()
+        #[cfg(test)]
+        pub fn recovery_mode(&self) -> bool {
+            self.inner.read().unwrap().recovery_mode
         }
+    }
+
+    fn remove_first_match(stack: &mut VecDeque<String>, key: &str) -> bool {
+        let Some(position) = stack.iter().position(|id| id == key) else {
+            return false;
+        };
+        stack.remove(position);
+        true
     }
 }
 
@@ -153,20 +192,17 @@ impl Step {
         client: Inngest,
         state: &HashMap<String, Option<Value>>,
         target_step_id: &str,
+        stack: &[String],
     ) -> Self {
         Step {
             client,
-            state: State::new(state),
+            state: State::new(state, stack),
             target_step_id: target_step_id.to_string(),
         }
     }
 
     fn new_op(&self, id: &str) -> Op {
         self.state.new_op(id)
-    }
-
-    pub(crate) fn error(&self) -> Option<StepError> {
-        self.state.error()
     }
 
     pub(crate) fn genop(&self) -> Vec<GeneratorOpCode> {
@@ -177,24 +213,16 @@ impl Step {
         self.state.missing_step()
     }
 
-    fn remove(&self, key: &str) -> Option<Option<Value>> {
-        self.state.remove(key)
-    }
-
     fn push_op(&self, op: GeneratorOpCode) {
         self.state.push_op(op);
-    }
-
-    fn push_error(&self, err: StepError) {
-        self.state.push_error(err);
     }
 
     fn push_missing_step(&self, id: String) {
         self.state.push_missing_step(id);
     }
 
-    fn get_hashed(&self, key: &str) -> Option<Option<Value>> {
-        self.state.get_hashed(key)
+    fn take_memoized(&self, key: &str) -> Option<Option<Value>> {
+        self.state.take_memoized(key)
     }
 
     pub async fn run<T, E, F>(&self, id: &str, f: impl FnOnce() -> F) -> Result<T, Error>
@@ -206,7 +234,7 @@ impl Step {
         let op = self.new_op(id);
         let hashed = op.hash();
 
-        if let Some(stored_value) = self.remove(&hashed) {
+        if let Some(stored_value) = self.take_memoized(&hashed) {
             return match parse_memoized_step_result(stored_value, "run step")? {
                 MemoizedStepResult::Data { data } => Ok(data),
                 MemoizedStepResult::Error { error } => Err(Error::Dev(DevError::Step(error))),
@@ -230,23 +258,23 @@ impl Step {
                     name: id.to_string(),
                     display_name: id.to_string(),
                     data: serialized.into(),
+                    error: None,
                     opts: json!({}),
                 });
                 Err(Error::Interrupt(FlowControlError::step_generator()))
             }
             Err(err) => {
-                // TODO: need to handle the following errors returned from the user
-                // - retry after error
-                // - non retriable error
-
                 let serialized_err =
                     serde_json::to_value(&err).map_err(|e| basic_error!("{}", e))?;
 
-                self.push_error(StepError {
-                    name: "Step failed".to_string(),
-                    message: err.to_string(),
-                    stack: None,
-                    data: Some(serialized_err),
+                self.push_op(GeneratorOpCode {
+                    op: Opcode::StepError,
+                    id: hashed,
+                    name: id.to_string(),
+                    display_name: id.to_string(),
+                    data: None,
+                    error: Some(step_error_from_user_error::<E>(err.to_string(), serialized_err)),
+                    opts: json!({}),
                 });
                 Err(Error::Interrupt(FlowControlError::step_generator()))
             }
@@ -258,7 +286,7 @@ impl Step {
         let op = self.new_op(id);
         let hashed = op.hash();
 
-        match self.get_hashed(&hashed) {
+        match self.take_memoized(&hashed) {
             // if state already exists, it means we already slept
             Some(_) => Ok(()),
 
@@ -274,6 +302,7 @@ impl Step {
                     name: id.to_string(),
                     display_name: id.to_string(),
                     data: None,
+                    error: None,
                     opts,
                 });
 
@@ -287,7 +316,7 @@ impl Step {
         let op = self.new_op(id);
         let hashed = op.hash();
 
-        match self.get_hashed(&hashed) {
+        match self.take_memoized(&hashed) {
             Some(_) => Ok(()),
 
             None => {
@@ -309,6 +338,7 @@ impl Step {
                     name: id.to_string(),
                     display_name: id.to_string(),
                     data: None,
+                    error: None,
                     opts,
                 });
 
@@ -326,7 +356,7 @@ impl Step {
         let op = self.new_op(id);
         let hashed = op.hash();
 
-        match self.get_hashed(&hashed) {
+        match self.take_memoized(&hashed) {
             Some(evt) => {
                 match evt {
                     None => Ok(None),
@@ -357,6 +387,7 @@ impl Step {
                     name: id.to_string(),
                     display_name: id.to_string(),
                     data: None,
+                    error: None,
                     opts: wait_opts,
                 });
 
@@ -374,7 +405,7 @@ impl Step {
         let op = self.new_op(id);
         let hashed = op.hash();
 
-        match self.get_hashed(&hashed) {
+        match self.take_memoized(&hashed) {
             Some(resp) => match parse_memoized_step_result(resp, "invoke step")? {
                 MemoizedStepResult::Data { data } => Ok(data),
                 MemoizedStepResult::Error { error } => Err(Error::Dev(DevError::Step(error))),
@@ -398,6 +429,7 @@ impl Step {
                     name: id.to_string(),
                     display_name: id.to_string(),
                     data: None,
+                    error: None,
                     opts: invoke_opts,
                 });
 
@@ -460,6 +492,38 @@ fn parse_memoized_step_result<T: for<'de> Deserialize<'de>>(
 
     serde_json::from_value::<MemoizedStepResult<T>>(value)
         .map_err(|err| basic_error!("error deserializing memoized {step_kind} result: {}", err))
+}
+
+fn step_error_from_user_error<E>(message: String, serialized_err: Value) -> StepError {
+    let name = std::any::type_name::<E>()
+        .rsplit("::")
+        .next()
+        .unwrap_or("StepError")
+        .to_string();
+
+    let stack = serialized_err
+        .get("stack")
+        .and_then(Value::as_str)
+        .map(ToString::to_string);
+
+    let name = serialized_err
+        .get("name")
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .unwrap_or(name);
+
+    let message = serialized_err
+        .get("message")
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .unwrap_or(message);
+
+    StepError {
+        name,
+        message,
+        stack,
+        data: Some(serialized_err),
+    }
 }
 
 pub struct WaitForEventOpts {
@@ -594,7 +658,7 @@ mod tests {
 
     #[test]
     fn repeated_step_ids_start_without_a_suffix() {
-        let state = state::State::new(&HashMap::new());
+        let state = state::State::new(&HashMap::new(), &[]);
 
         let first = state.new_op("hello");
         let second = state.new_op("hello");
@@ -605,6 +669,46 @@ mod tests {
         assert_eq!(third.hash(), "7db70735b4beeadfd5cccfe4a5eb48b71acfb404");
     }
 
+    #[test]
+    fn take_memoized_prefers_stack_order_without_entering_recovery_mode() {
+        let first = "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string();
+        let second = "7c211433f02071597741e6ff5a8ea34789abbf43".to_string();
+        let state = state::State::new(
+            &HashMap::from([
+                (first.clone(), Some(json!({ "data": "first" }))),
+                (second.clone(), Some(json!({ "data": "second" }))),
+            ]),
+            &[first.clone(), second.clone()],
+        );
+
+        assert_eq!(state.take_memoized(&first), Some(Some(json!({ "data": "first" }))));
+        assert_eq!(
+            state.take_memoized(&second),
+            Some(Some(json!({ "data": "second" })))
+        );
+        assert!(!state.recovery_mode());
+    }
+
+    #[test]
+    fn take_memoized_enters_recovery_mode_when_stack_order_diverges() {
+        let first = "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string();
+        let second = "7c211433f02071597741e6ff5a8ea34789abbf43".to_string();
+        let third = "67c31e17d42dbd5f8e805daeba4c39a7fba8a518".to_string();
+        let state = state::State::new(
+            &HashMap::from([
+                (first.clone(), Some(json!({ "data": "first" }))),
+                (second.clone(), Some(json!({ "data": "second" }))),
+                (third.clone(), Some(json!({ "data": "third" }))),
+            ]),
+            &[first.clone(), second.clone(), third.clone()],
+        );
+
+        assert_eq!(state.take_memoized(&second), Some(Some(json!({ "data": "second" }))));
+        assert!(state.recovery_mode());
+        assert_eq!(state.take_memoized(&first), Some(Some(json!({ "data": "first" }))));
+        assert_eq!(state.take_memoized(&third), Some(Some(json!({ "data": "third" }))));
+    }
+
     #[tokio::test]
     async fn run_reuses_wrapped_memoized_data() {
         let client = Inngest::new("test-app");
@@ -612,7 +716,7 @@ mod tests {
             "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string(),
             Some(json!({ "data": { "value": "hello" } })),
         )]);
-        let step = Step::new(client, &state, "step");
+        let step = Step::new(client, &state, "step", &[]);
 
         let result: TestEventData = step
             .run("hello", || async {
@@ -629,6 +733,7 @@ mod tests {
                 value: "hello".to_string(),
             }
         );
+        assert!(step.genop().is_empty());
     }
 
     #[tokio::test]
@@ -644,7 +749,7 @@ mod tests {
                 }
             })),
         )]);
-        let step = Step::new(client, &state, "step");
+        let step = Step::new(client, &state, "step", &[]);
 
         let result: Result<TestEventData, Error> = step
             .run("hello", || async {
@@ -662,6 +767,32 @@ mod tests {
             }
             other => panic!("expected memoized step error, got {other:?}"),
         }
+        assert!(step.genop().is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_failures_emit_step_error_opcodes() {
+        let client = Inngest::new("test-app");
+        let step = Step::new(client, &HashMap::new(), "step", &[]);
+
+        let result: Result<TestEventData, Error> = step
+            .run("hello", || async {
+                Err::<TestEventData, TestStepFailure>(TestStepFailure {
+                    message: "step exploded".to_string(),
+                })
+            })
+            .await;
+
+        match result {
+            Err(Error::Interrupt(mut flow)) => flow.acknowledge(),
+            other => panic!("expected step interruption, got {other:?}"),
+        }
+
+        let body = serde_json::to_value(step.genop()).expect("step error opcode should serialize");
+        assert_eq!(body[0]["op"], "StepError");
+        assert_eq!(body[0]["id"], "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
+        assert_eq!(body[0]["error"]["name"], "TestStepFailure");
+        assert_eq!(body[0]["error"]["message"], "step exploded");
     }
 
     #[test]
@@ -676,7 +807,7 @@ mod tests {
                 "ts": 1
             })),
         )]);
-        let step = Step::new(client, &state, "step");
+        let step = Step::new(client, &state, "step", &[]);
 
         let result = step
             .wait_for_event::<TestEventData>(
@@ -698,7 +829,7 @@ mod tests {
     fn wait_for_event_preserves_null_timeout_values() {
         let client = Inngest::new("test-app");
         let state = HashMap::from([("aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string(), None)]);
-        let step = Step::new(client, &state, "step");
+        let step = Step::new(client, &state, "step", &[]);
 
         let result = step
             .wait_for_event::<TestEventData>(
@@ -720,7 +851,7 @@ mod tests {
         let client = Inngest::new("test-app")
             .event_api_origin(&server.url)
             .event_key("test-key");
-        let step = Step::new(client.clone(), &HashMap::new(), "step");
+        let step = Step::new(client.clone(), &HashMap::new(), "step", &[]);
 
         let first = step
             .send_event(
@@ -747,7 +878,7 @@ mod tests {
             step.genop()[0].id.clone(),
             Some(json!({ "data": ["evt-1"] })),
         )]);
-        let memoized_step = Step::new(client, &stored, "step");
+        let memoized_step = Step::new(client, &stored, "step", &[]);
         let second = memoized_step
             .send_event(
                 "send-test",
@@ -771,7 +902,7 @@ mod tests {
         let client = Inngest::new("test-app")
             .event_api_origin(&server.url)
             .event_key("test-key");
-        let step = Step::new(client, &HashMap::new(), "step");
+        let step = Step::new(client, &HashMap::new(), "step", &[]);
 
         let result = step
             .send_events(

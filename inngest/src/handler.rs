@@ -134,7 +134,12 @@ where
                         },
                     };
 
-                    let step_tool = StepTool::new(client.clone(), &data.steps, &query.step_id);
+                    let step_tool = StepTool::new(
+                        client.clone(),
+                        &data.steps,
+                        &query.step_id,
+                        &data.ctx.stack.stack,
+                    );
 
                     match std::panic::catch_unwind(AssertUnwindSafe(|| {
                         (step_func.as_ref())(input, step_tool.clone())
@@ -150,17 +155,7 @@ where
                                         flow.acknowledge();
                                         match flow.variant {
                                             FlowControlVariant::StepGenerator => {
-                                                let (status, body) = if step_tool.error().is_some() {
-                                                    match serde_json::to_value(step_tool.error()) {
-                                                        Ok(v) => (500, v),
-                                                        Err(err) => {
-                                                            return Err(basic_error!(
-                                                                "error seralizing step error: {}",
-                                                                err
-                                                            ));
-                                                        }
-                                                    }
-                                                } else if let Some(step_id) = step_tool.missing_step()
+                                                let (status, body) = if let Some(step_id) = step_tool.missing_step()
                                                 {
                                                     (
                                                         206,
@@ -749,12 +744,22 @@ struct RunRequestBody<T: 'static> {
 #[derive(Deserialize, Debug)]
 struct RunRequestCtx {
     attempt: u8,
-    // disable_immediate_execution: bool,
+    #[serde(default)]
+    _disable_immediate_execution: bool,
     env: String,
     // fn_id: String,
     run_id: String,
     // step_id: String,
-    // stack: RunRequestCtxStack,
+    #[serde(default)]
+    stack: RunRequestCtxStack,
+}
+
+#[derive(Default, Deserialize, Debug)]
+struct RunRequestCtxStack {
+    #[serde(default, rename = "current")]
+    _current: u32,
+    #[serde(default)]
+    stack: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
