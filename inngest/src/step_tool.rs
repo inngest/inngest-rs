@@ -823,6 +823,7 @@ mod tests {
         let event = result.expect("memoized wait should return an event");
         assert_eq!(event.id.as_deref(), Some("evt-1"));
         assert_eq!(event.data.value, "hello");
+        assert!(step.genop().is_empty());
     }
 
     #[test]
@@ -843,6 +844,7 @@ mod tests {
             .expect("timed out waits should decode to None");
 
         assert!(result.is_none());
+        assert!(step.genop().is_empty());
     }
 
     #[tokio::test]
@@ -894,6 +896,31 @@ mod tests {
 
         assert_eq!(second, vec!["evt-1".to_string()]);
         assert_eq!(server.state.requests.load(Ordering::SeqCst), 1);
+        assert!(memoized_step.genop().is_empty());
+    }
+
+    #[test]
+    fn invoke_reuses_wrapped_memoized_data_without_reporting() {
+        let client = Inngest::new("test-app");
+        let state = HashMap::from([(
+            "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string(),
+            Some(json!({ "data": "hello" })),
+        )]);
+        let step = Step::new(client, &state, "step", &[]);
+
+        let result = step
+            .invoke::<String>(
+                "hello",
+                InvokeFunctionOpts {
+                    function_id: "child-fn".to_string(),
+                    data: json!({ "value": "ignored" }),
+                    timeout: None,
+                },
+            )
+            .expect("memoized invoke should return stored data");
+
+        assert_eq!(result, "hello".to_string());
+        assert!(step.genop().is_empty());
     }
 
     #[tokio::test]

@@ -207,3 +207,78 @@ async fn repeated_step_ids_replay_with_distinct_memoized_results() {
     );
     assert_eq!(run.output, json!(["value-1", "value-2"]));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn memoized_step_errors_replay_without_rerunning_the_failed_step_body() {
+    let _lock = DevServerLock::acquire();
+    let _dev_server = DevServer::start().await;
+
+    let app_name = e2e_support::unique_name("step-run-error-app");
+    let event_name = e2e_support::unique_name("test.step-run.error");
+
+    let client = Inngest::new(&app_name).dev(e2e_support::DEV_SERVER_ORIGIN);
+    let run_id_state = Arc::new(Mutex::new(None::<String>));
+    let step_error_state = Arc::new(Mutex::new(None::<String>));
+    let handler_invocations = Arc::new(AtomicUsize::new(0));
+    let step_invocations = Arc::new(AtomicUsize::new(0));
+
+    let run_id_capture = Arc::clone(&run_id_state);
+    let step_error_capture = Arc::clone(&step_error_state);
+    let handler_invocations_capture = Arc::clone(&handler_invocations);
+    let step_invocations_capture = Arc::clone(&step_invocations);
+    let step_run_fn: ServableFn<EmptyEventData, Error> = client.create_function(
+        FunctionOpts::new("step-run-error-fn")
+            .name("Step Run Error Fn")
+            .retries(0),
+        Trigger::event(&event_name),
+        move |input: Input<EmptyEventData>, step: StepTool| {
+            let run_id_capture = Arc::clone(&run_id_capture);
+            let step_error_capture = Arc::clone(&step_error_capture);
+            let handler_invocations_capture = Arc::clone(&handler_invocations_capture);
+            let step_invocations_capture = Arc::clone(&step_invocations_capture);
+
+            async move {
+                handler_invocations_capture.fetch_add(1, Ordering::SeqCst);
+                *run_id_capture.lock().unwrap() = Some(input.ctx.run_id.clone());
+
+                match step
+                    .run::<MemoizedStepOutput, MemoizedStepFailure, _>("failing-step", || {
+                        let step_invocations_capture = Arc::clone(&step_invocations_capture);
+
+                        async move {
+                            step_invocations_capture.fetch_add(1, Ordering::SeqCst);
+                            Err::<MemoizedStepOutput, MemoizedStepFailure>(MemoizedStepFailure {
+                                message: "step exploded".to_string(),
+                            })
+                        }
+                    })
+                    .await
+                {
+                    Ok(value) => Ok(json!(value)),
+                    Err(Error::Dev(DevError::Step(err))) => {
+                        *step_error_capture.lock().unwrap() = Some(err.message.clone());
+                        Ok(json!({ "step_error": err.message }))
+                    }
+                    Err(err) => Err(err),
+                }
+            }
+        },
+    );
+
+    let app = spawn_app(client.clone(), vec![step_run_fn.into()]).await;
+    app.sync().await;
+
+    client
+        .send_event(&Event::new(&event_name, EmptyEventData {}))
+        .await
+        .expect("step-error event should send successfully");
+
+    let run_id = wait_for_state(&run_id_state, Duration::from_secs(5)).await;
+    let run = wait_for_run_status(&run_id, "Completed", Duration::from_secs(10)).await;
+    let step_error = wait_for_state(&step_error_state, Duration::from_secs(5)).await;
+
+    assert_eq!(handler_invocations.load(Ordering::SeqCst), 2);
+    assert_eq!(step_invocations.load(Ordering::SeqCst), 1);
+    assert_eq!(step_error, "step exploded".to_string());
+    assert_eq!(run.output, json!({ "step_error": "step exploded" }));
+}
