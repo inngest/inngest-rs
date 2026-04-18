@@ -44,6 +44,7 @@ impl Default for FunctionOpts {
 }
 
 impl FunctionOpts {
+    /// Creates function options with the provided identifier.
     pub fn new(id: &str) -> Self {
         FunctionOpts {
             id: id.to_string(),
@@ -51,8 +52,15 @@ impl FunctionOpts {
         }
     }
 
+    /// Overrides the display name shown in Inngest.
     pub fn name(mut self, name: &str) -> Self {
         self.name = Some(name.to_string());
+        self
+    }
+
+    /// Overrides the number of retry attempts the executor should schedule.
+    pub fn retries(mut self, retries: u8) -> Self {
+        self.retries = retries;
         self
     }
 }
