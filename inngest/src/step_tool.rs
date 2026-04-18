@@ -458,9 +458,8 @@ fn parse_memoized_step_result<T: for<'de> Deserialize<'de>>(
         basic_error!("error parsing memoized {step_kind} result: expected wrapped data or error")
     })?;
 
-    serde_json::from_value::<MemoizedStepResult<T>>(value).map_err(|err| {
-        basic_error!("error deserializing memoized {step_kind} result: {}", err)
-    })
+    serde_json::from_value::<MemoizedStepResult<T>>(value)
+        .map_err(|err| basic_error!("error deserializing memoized {step_kind} result: {}", err))
 }
 
 pub struct WaitForEventOpts {
@@ -698,8 +697,7 @@ mod tests {
     #[test]
     fn wait_for_event_preserves_null_timeout_values() {
         let client = Inngest::new("test-app");
-        let state =
-            HashMap::from([("aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string(), None)]);
+        let state = HashMap::from([("aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d".to_string(), None)]);
         let step = Step::new(client, &state, "step");
 
         let result = step

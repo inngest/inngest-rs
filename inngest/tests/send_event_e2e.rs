@@ -235,7 +235,10 @@ async fn step_send_events_replays_and_returns_all_emitted_ids() {
     loop {
         let received = child_events.lock().unwrap().clone();
         if received.len() == 2 {
-            let ids = received.iter().map(|event| event.id.clone()).collect::<Vec<_>>();
+            let ids = received
+                .iter()
+                .map(|event| event.id.clone())
+                .collect::<Vec<_>>();
             let messages = received
                 .iter()
                 .map(|event| event.message.clone())

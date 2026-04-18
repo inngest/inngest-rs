@@ -201,6 +201,9 @@ async fn repeated_step_ids_replay_with_distinct_memoized_results() {
 
     assert_eq!(handler_invocations.load(Ordering::SeqCst), 3);
     assert_eq!(step_invocations.load(Ordering::SeqCst), 2);
-    assert_eq!(repeated_results, vec!["value-1".to_string(), "value-2".to_string()]);
+    assert_eq!(
+        repeated_results,
+        vec!["value-1".to_string(), "value-2".to_string()]
+    );
     assert_eq!(run.output, json!(["value-1", "value-2"]));
 }

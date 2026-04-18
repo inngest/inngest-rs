@@ -21,11 +21,10 @@ use crate::{
     version::{self, EXECUTION_VERSION},
 };
 
-type DynamicFn =
-    dyn Fn(RunQueryParams, Value) -> BoxFuture<'static, Result<SdkResponse, Error>>
-        + Send
-        + Sync
-        + 'static;
+type DynamicFn = dyn Fn(RunQueryParams, Value) -> BoxFuture<'static, Result<SdkResponse, Error>>
+    + Send
+    + Sync
+    + 'static;
 
 struct DynamicServableFn {
     app_id: String,
@@ -626,11 +625,16 @@ impl Handler {
     }
 
     async fn fetch_run_events(&self, run_id: &str) -> Result<Vec<Value>, Error> {
-        self.fetch_run_resource(&format!("/v0/runs/{run_id}/batch")).await
+        self.fetch_run_resource(&format!("/v0/runs/{run_id}/batch"))
+            .await
     }
 
-    async fn fetch_run_actions(&self, run_id: &str) -> Result<HashMap<String, Option<Value>>, Error> {
-        self.fetch_run_resource(&format!("/v0/runs/{run_id}/actions")).await
+    async fn fetch_run_actions(
+        &self,
+        run_id: &str,
+    ) -> Result<HashMap<String, Option<Value>>, Error> {
+        self.fetch_run_resource(&format!("/v0/runs/{run_id}/actions"))
+            .await
     }
 
     async fn fetch_run_resource<T: DeserializeOwned>(&self, path: &str) -> Result<T, Error> {
@@ -1082,12 +1086,7 @@ mod tests {
         let body = event_body("test/first", json!({ "count": 42 }));
 
         let error = match handler
-            .run(
-                &headers,
-                &run_query(first_fn_id),
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(first_fn_id), &body.to_string(), &body)
             .await
         {
             Ok(_) => panic!("mismatched payload should fail"),
@@ -1179,12 +1178,7 @@ mod tests {
         let body = event_body("test/first", json!({ "message": "hello" }));
 
         let error = match handler
-            .run(
-                &headers,
-                &run_query(fn_id),
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(fn_id), &body.to_string(), &body)
             .await
         {
             Ok(_) => panic!("cloud mode should reject missing primary signing key"),
@@ -1205,12 +1199,7 @@ mod tests {
         let body = event_body("test/first", json!({ "message": "hello" }));
 
         let error = match handler
-            .run(
-                &headers,
-                &run_query(fn_id),
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(fn_id), &body.to_string(), &body)
             .await
         {
             Ok(_) => panic!("cloud mode should still require a signature"),
@@ -1228,12 +1217,7 @@ mod tests {
         let body = event_body("test/first", json!({ "message": "hello" }));
 
         let response = handler
-            .run(
-                &headers,
-                &run_query(fn_id),
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(fn_id), &body.to_string(), &body)
             .await
             .expect("dev mode should allow unsigned requests");
 
@@ -1248,12 +1232,7 @@ mod tests {
         let headers = headers(&[(header::INNGEST_SIGNATURE, "t=1&s=deadbeef")]);
 
         let error = match handler
-            .run(
-                &headers,
-                &run_query(fn_id),
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(fn_id), &body.to_string(), &body)
             .await
         {
             Ok(_) => panic!("invalid signatures should fail in dev mode when a key is configured"),
@@ -1275,12 +1254,7 @@ mod tests {
         let headers = headers(&[(header::INNGEST_SIGNATURE, &signature)]);
 
         let response = handler
-            .run(
-                &headers,
-                &run_query(fn_id),
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(fn_id), &body.to_string(), &body)
             .await
             .expect("fallback signing key should validate the request");
 
@@ -1448,13 +1422,14 @@ mod tests {
     async fn handler_passes_requested_step_id_to_function_context() {
         let client = Inngest::new("test-app").dev("1");
         let mut handler = Handler::new(&client);
-        let func: ServableFn<FirstEvent, Error> = client.create_function(
-            FunctionOpts::new("step-id"),
-            Trigger::event("test/first"),
-            |input: Input<FirstEvent>, _step| async move {
-                Ok(json!({ "step_id": input.ctx.step_id }))
-            },
-        );
+        let func: ServableFn<FirstEvent, Error> =
+            client.create_function(
+                FunctionOpts::new("step-id"),
+                Trigger::event("test/first"),
+                |input: Input<FirstEvent>, _step| async move {
+                    Ok(json!({ "step_id": input.ctx.step_id }))
+                },
+            );
         let fn_id = func.slug();
         handler.register_fn(func);
 
@@ -1560,9 +1535,7 @@ mod tests {
     #[tokio::test]
     async fn use_api_requests_fetch_events_and_steps_with_auth_headers() {
         let (origin, records) = spawn_run_api_server().await;
-        let client = Inngest::new("test-app")
-            .dev(&origin)
-            .env("branch");
+        let client = Inngest::new("test-app").dev(&origin).env("branch");
         let mut handler = Handler::new(&client).signing_key(PRIMARY_SIGNING_KEY);
 
         let func: ServableFn<FirstEvent, Error> = client.create_function(
