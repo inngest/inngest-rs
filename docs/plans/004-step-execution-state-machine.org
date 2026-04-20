@@ -1,20 +1,19 @@
+#+TITLE: Step Execution State Machine
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-16
 #+STATUS: Draft
 
-* Milestone 004: Step Execution State Machine
-
-** Goal
+* Goal
 - Replace the current simple generator behavior with a spec-aligned step execution state machine.
 
-** Scope
+* Scope
 - Root discovery vs targeted step execution
 - `StepRun`
 - `StepPlanned`
 - `StepError`
 - `StepNotFound`
 
-** Checklist
+* Checklist
 - [ ] Distinguish root execution (`stepId=step`) from targeted step execution (`stepId!=step`)
 - [ ] Prevent targeted step executions from discovering or executing unrelated new steps
 - [ ] Add explicit support for planning a step without immediately running it
@@ -29,11 +28,11 @@
 - [ ] Add tests for targeted step execution flow
 - [ ] Add tests for missing-target-step behavior
 
-** Exit Criteria
+* Exit Criteria
 - [ ] The SDK can handle both discovery and targeted step execution correctly
 - [ ] Step opcodes are emitted in the correct cases
 - [ ] The runtime no longer relies on the current one-path flow control shortcut
 
-** Out of Scope
+* Out of Scope
 - Parallel discovery
 - Stack recovery for changed functions

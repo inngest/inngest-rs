@@ -1,20 +1,19 @@
+#+TITLE: Signature and Mode Hardening
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-16
 #+STATUS: Done
 
-* Milestone 001: Signature and Mode Hardening
-
-** Goal
+* Goal
 - Make cloud/dev mode handling and request authentication spec-correct and deterministic.
 
-** Scope
+* Scope
 - Mode selection
 - Config-driven server targeting for sync/authenticated API calls
 - Signature verification rules
 - Signing key fallback support
 - Introspection auth metadata
 
-** Checklist
+* Checklist
 - [X] Stop deriving effective mode from incoming server headers
 - [X] Use SDK configuration and environment to decide cloud vs dev behavior
 - [X] Keep sync targeting driven by configured mode and configured origins, not triggering request headers
@@ -35,14 +34,14 @@
 - [X] Add tests for primary-key and fallback-key verification paths
 - [X] Add tests proving configured mode, not inbound headers, drives sync target selection
 
-** Exit Criteria
+* Exit Criteria
 - [X] Incoming request verification is driven by configured mode, not request headers
 - [X] Sync targeting and outbound auth selection are driven by configured mode/origins, not request headers
 - [X] Cloud-mode failures for missing signing key and missing signature match spec expectations
 - [X] Fallback key logic works for both verification and outbound auth
 - [X] Introspection accurately reports auth-related state without leaking non-spec top-level fields
 
-** Out of Scope
+* Out of Scope
 - Full call-request execution semantics
 - Middleware
 - Connect

@@ -1,18 +1,17 @@
+#+TITLE: Function Config Surface
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-16
 #+STATUS: Draft
 
-* Milestone 006: Function Config Surface
-
-** Goal
+* Goal
 - Expand the function definition API and sync serialization to cover the spec-defined function metadata.
 
-** Scope
+* Scope
 - Public option types
 - Sync payload serialization
 - Validation of supported config shapes
 
-** Checklist
+* Checklist
 - [ ] Extend `FunctionOpts` to support the next tier of spec-defined fields
 - [ ] Add sync serialization for `cancel`
 - [ ] Add sync serialization for `idempotency`
@@ -28,11 +27,11 @@
 - [ ] Add serialization tests for each new option surface
 - [ ] Update examples and README support notes to match the actual implementation
 
-** Exit Criteria
+* Exit Criteria
 - [ ] Function definitions can express the supported spec-level scheduling and control metadata
 - [ ] The sync payload matches the public API surface
 - [ ] The new config surface is covered by serialization tests
 
-** Out of Scope
+* Out of Scope
 - Failure handlers
 - Middleware hooks

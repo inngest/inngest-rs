@@ -1,18 +1,17 @@
+#+TITLE: Step Surface Completion
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-16
 #+STATUS: Draft
 
-* Milestone 007: Step Surface Completion
-
-** Goal
+* Goal
 - Finish the core user-facing step API beyond the current subset.
 
-** Scope
+* Scope
 - Durable event send steps
 - Invoke payload conformance cleanup
 - Optional AI/gateway step groundwork
 
-** Checklist
+* Checklist
 - [ ] Add a durable `step.send_event` or equivalent API
 - [ ] Decide whether send-event is implemented as a dedicated opcode or a wrapped run step
 - [ ] Ensure send-event behavior is retriable and memoized
@@ -25,12 +24,12 @@
 - [ ] Evaluate whether HTTP gateway fetch support should land here or remain deferred
 - [ ] Document any intentionally deferred step types
 
-** Exit Criteria
+* Exit Criteria
 - [ ] The core step API surface is no longer missing durable event send support
 - [ ] Invoke behavior is spec-compatible
 - [ ] Deferred step types are explicitly documented instead of silently absent
 
-** Out of Scope
+* Out of Scope
 - Connect
 - Streaming
 - Checkpointing

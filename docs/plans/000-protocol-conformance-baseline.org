@@ -1,19 +1,18 @@
+#+TITLE: Protocol Conformance Baseline
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-16
 #+STATUS: Done
 
-* Milestone 000: Protocol Conformance Baseline
-
-** Goal
+* Goal
 - Bring the current HTTP SDK into basic wire-level compliance with the spec before adding more behavior.
 
-** Scope
+* Scope
 - Response headers and versions
 - Sync payload versioning and shape
 - Step runtime URL/query parameter correctness
 - Error response structure and retry headers
 
-** Checklist
+* Checklist
 - [X] Update `X-Inngest-Sdk` formatting to match `name:vsemver`
 - [X] Update `X-Inngest-Req-Version` to `2` for all relevant responses
 - [X] Fix sync payload `v` from `1` to `0.1`
@@ -27,12 +26,12 @@
 - [X] Add tests for sync payload serialization
 - [X] Add tests for HTTP response headers and status codes
 
-** Exit Criteria
+* Exit Criteria
 - [X] Sync requests and call responses serialize to spec-compatible shapes
 - [X] Header/version behavior is covered by tests
 - [X] No known wire-format mismatches remain in the base HTTP path
 
-** Out of Scope
+* Out of Scope
 - Step execution model changes
 - Full payload retrieval
 - Parallelism

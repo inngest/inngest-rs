@@ -1,18 +1,17 @@
+#+TITLE: Advanced Modes Placeholder
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-16
 #+STATUS: Draft
 
-* Milestone 009: Advanced Modes Placeholder
-
-** Goal
+* Goal
 - Reserve space for advanced execution and transport modes after the base SDK is stable.
 
-** Placeholder
+* Placeholder
 - [ ] Define the order of work across streaming, checkpointing, and connect
 - [ ] Decide which of these features are required for the first beta-quality release
 - [ ] Break each subsystem into its own implementation plan before starting work
 - [ ] Revisit public API implications once milestones `000` through `008` are complete
 
-** Notes
+* Notes
 - This milestone is intentionally a placeholder.
 - Do not start implementation until the core HTTP SDK behavior is stable and spec-correct.
