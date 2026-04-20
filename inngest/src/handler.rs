@@ -1,7 +1,7 @@
 use std::{collections::HashMap, panic::AssertUnwindSafe, sync::Arc};
 
 use futures::{future::BoxFuture, FutureExt};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha1::Digest;
 use sha2::Sha256;
@@ -21,8 +21,10 @@ use crate::{
     version::{self, EXECUTION_VERSION},
 };
 
-type DynamicFn =
-    dyn Fn(String, Value) -> BoxFuture<'static, Result<SdkResponse, Error>> + Send + Sync + 'static;
+type DynamicFn = dyn Fn(RunQueryParams, Value) -> BoxFuture<'static, Result<SdkResponse, Error>>
+    + Send
+    + Sync
+    + 'static;
 
 struct DynamicServableFn {
     app_id: String,
@@ -67,8 +69,8 @@ impl DynamicServableFn {
         }
     }
 
-    async fn run(&self, fn_id: String, body: Value) -> Result<SdkResponse, Error> {
-        (self.func)(fn_id, body).await
+    async fn run(&self, query: RunQueryParams, body: Value) -> Result<SdkResponse, Error> {
+        (self.func)(query, body).await
     }
 }
 
@@ -103,7 +105,7 @@ where
             app_id,
             opts,
             trigger,
-            func: Box::new(move |fn_id, body| {
+            func: Box::new(move |query, body| {
                 let step_func = Arc::clone(&func);
                 let client = client.clone();
 
@@ -125,14 +127,19 @@ where
                         events: data.events,
                         ctx: InputCtx {
                             env: data.ctx.env.clone(),
-                            fn_id,
+                            fn_id: query.fn_id.clone(),
                             run_id: data.ctx.run_id.clone(),
-                            step_id: "step".to_string(),
+                            step_id: query.step_id.clone(),
                             attempt: data.ctx.attempt,
                         },
                     };
 
-                    let step_tool = StepTool::new(client.clone(), &data.steps);
+                    let step_tool = StepTool::new(
+                        client.clone(),
+                        &data.steps,
+                        &query.step_id,
+                        &data.ctx.stack.stack,
+                    );
 
                     match std::panic::catch_unwind(AssertUnwindSafe(|| {
                         (step_func.as_ref())(input, step_tool.clone())
@@ -148,16 +155,15 @@ where
                                         flow.acknowledge();
                                         match flow.variant {
                                             FlowControlVariant::StepGenerator => {
-                                                let (status, body) = if step_tool.error().is_some() {
-                                                    match serde_json::to_value(step_tool.error()) {
-                                                        Ok(v) => (500, v),
-                                                        Err(err) => {
-                                                            return Err(basic_error!(
-                                                                "error seralizing step error: {}",
-                                                                err
-                                                            ));
-                                                        }
-                                                    }
+                                                let (status, body) = if let Some(step_id) = step_tool.missing_step()
+                                                {
+                                                    (
+                                                        206,
+                                                        json!([{
+                                                            "id": step_id,
+                                                            "op": "StepNotFound"
+                                                        }]),
+                                                    )
                                                 } else if !step_tool.genop().is_empty() {
                                                     match serde_json::to_value(step_tool.genop()) {
                                                         Ok(v) => (206, v),
@@ -221,16 +227,22 @@ pub struct Handler {
     mode: Kind,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct RunQueryParams {
     #[serde(rename = "fnId")]
     fn_id: String,
+    #[serde(default = "default_step_id", rename = "stepId")]
+    step_id: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct SyncQueryParams {
     #[serde(rename = "deployId")]
     deploy_id: Option<String>,
+}
+
+fn default_step_id() -> String {
+    "step".to_string()
 }
 
 impl Handler {
@@ -568,9 +580,120 @@ impl Handler {
             ));
         };
 
-        func.run(query.fn_id.clone(), body.clone()).await
+        let hydrated_body = self.hydrate_run_body(body).await?;
+
+        func.run(query.clone(), hydrated_body).await
     }
     // run the function
+
+    async fn hydrate_run_body(&self, body: &Value) -> Result<Value, Error> {
+        if !body
+            .get("use_api")
+            .and_then(Value::as_bool)
+            .unwrap_or_default()
+        {
+            return Ok(body.clone());
+        }
+
+        let run_id = body
+            .get("ctx")
+            .and_then(Value::as_object)
+            .and_then(|ctx| ctx.get("run_id"))
+            .and_then(Value::as_str)
+            .ok_or_else(|| basic_error!("missing run_id for use_api payload hydration"))?;
+
+        let events = self.fetch_run_events(run_id).await?;
+        let event = events
+            .first()
+            .cloned()
+            .ok_or_else(|| basic_error!("fetched batch events were empty for run {}", run_id))?;
+        let steps = self.fetch_run_actions(run_id).await?;
+
+        let mut hydrated = body.clone();
+        hydrated["event"] = event;
+        hydrated["events"] = Value::Array(events);
+        hydrated["steps"] = serde_json::to_value(steps)
+            .map_err(|err| basic_error!("error serializing hydrated steps: {}", err))?;
+        hydrated["use_api"] = json!(false);
+
+        Ok(hydrated)
+    }
+
+    async fn fetch_run_events(&self, run_id: &str) -> Result<Vec<Value>, Error> {
+        self.fetch_run_resource(&format!("/v0/runs/{run_id}/batch"))
+            .await
+    }
+
+    async fn fetch_run_actions(
+        &self,
+        run_id: &str,
+    ) -> Result<HashMap<String, Option<Value>>, Error> {
+        self.fetch_run_resource(&format!("/v0/runs/{run_id}/actions"))
+            .await
+    }
+
+    async fn fetch_run_resource<T: DeserializeOwned>(&self, path: &str) -> Result<T, Error> {
+        let mut response = self
+            .send_api_get(path, self.signing_key.as_deref())
+            .await
+            .map_err(|err| basic_error!("{}", err))?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED
+            && self.signing_key.is_some()
+            && self.signing_key_fallback.is_some()
+        {
+            response = self
+                .send_api_get(path, self.signing_key_fallback.as_deref())
+                .await
+                .map_err(|err| basic_error!("{}", err))?;
+        }
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(basic_error!(
+                "error fetching run payload from {}: status {}",
+                path,
+                status.as_u16()
+            ));
+        }
+
+        response
+            .json::<T>()
+            .await
+            .map_err(|err| basic_error!("error decoding run payload from {}: {}", path, err))
+    }
+
+    async fn send_api_get(
+        &self,
+        path: &str,
+        auth_key: Option<&str>,
+    ) -> Result<reqwest::Response, String> {
+        let url = format!(
+            "{}{}",
+            self.inngest.inngest_api_origin().trim_end_matches('/'),
+            path
+        );
+        let mut request = reqwest::Client::new()
+            .get(url)
+            .header(header::INNGEST_SDK, version::sdk())
+            .header(header::INNGEST_REQ_VERSION, EXECUTION_VERSION);
+
+        if let Some(env) = self.inngest.env.clone() {
+            request = request.header(header::INNGEST_ENV, env);
+        }
+
+        if let Some(key) = auth_key {
+            let hashed = Signature::new(key)
+                .hash()
+                .map_err(|_| "error hashing signing key".to_string())?;
+            request = request.header("authorization", format!("Bearer {}", hashed));
+        }
+
+        request.send().await.map_err(|err| {
+            println!("ERROR: {:?}", err);
+            format!("error fetching run payload from {}", path)
+        })
+    }
 
     async fn send_sync_request(
         &self,
@@ -621,12 +744,22 @@ struct RunRequestBody<T: 'static> {
 #[derive(Deserialize, Debug)]
 struct RunRequestCtx {
     attempt: u8,
-    // disable_immediate_execution: bool,
+    #[serde(default)]
+    _disable_immediate_execution: bool,
     env: String,
     // fn_id: String,
     run_id: String,
     // step_id: String,
-    // stack: RunRequestCtxStack,
+    #[serde(default)]
+    stack: RunRequestCtxStack,
+}
+
+#[derive(Default, Deserialize, Debug)]
+struct RunRequestCtxStack {
+    #[serde(default, rename = "current")]
+    _current: u32,
+    #[serde(default)]
+    stack: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -719,8 +852,9 @@ mod tests {
     use axum::{
         extract::State,
         http::{HeaderMap, StatusCode, Uri},
-        routing::post,
-        Router,
+        response::IntoResponse,
+        routing::{get, post},
+        Json, Router,
     };
     use hmac::{Hmac, Mac};
     use serde::{Deserialize, Serialize};
@@ -740,6 +874,25 @@ mod tests {
     #[derive(Debug, Deserialize, Serialize)]
     struct SecondEvent {
         count: u32,
+    }
+
+    #[derive(Debug, Deserialize, Serialize)]
+    struct StepTestError {
+        message: String,
+    }
+
+    impl std::fmt::Display for StepTestError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.message)
+        }
+    }
+
+    impl std::error::Error for StepTestError {}
+
+    impl From<StepTestError> for Error {
+        fn from(err: StepTestError) -> Self {
+            Error::Dev(crate::result::DevError::Basic(err.message))
+        }
     }
 
     const PRIMARY_SIGNING_KEY: &str =
@@ -806,7 +959,7 @@ mod tests {
         let first_response = handler
             .run(
                 &headers,
-                &RunQueryParams { fn_id: first_fn_id },
+                &run_query(first_fn_id),
                 &first_body.to_string(),
                 &first_body,
             )
@@ -831,9 +984,7 @@ mod tests {
         let second_response = handler
             .run(
                 &headers,
-                &RunQueryParams {
-                    fn_id: second_fn_id,
-                },
+                &run_query(second_fn_id),
                 &second_body.to_string(),
                 &second_body,
             )
@@ -873,7 +1024,7 @@ mod tests {
         let first_response = handler
             .run(
                 &headers,
-                &RunQueryParams { fn_id: first_fn_id },
+                &run_query(first_fn_id),
                 &event_body("test/first", json!({ "message": "hello" })).to_string(),
                 &event_body("test/first", json!({ "message": "hello" })),
             )
@@ -884,9 +1035,7 @@ mod tests {
         let second_response = handler
             .run(
                 &headers,
-                &RunQueryParams {
-                    fn_id: second_fn_id,
-                },
+                &run_query(second_fn_id),
                 &event_body("test/second", json!({ "count": 42 })).to_string(),
                 &event_body("test/second", json!({ "count": 42 })),
             )
@@ -905,9 +1054,7 @@ mod tests {
         let error = match handler
             .run(
                 &headers,
-                &RunQueryParams {
-                    fn_id: "test-app-missing".to_string(),
-                },
+                &run_query("test-app-missing".to_string()),
                 &body.to_string(),
                 &body,
             )
@@ -944,12 +1091,7 @@ mod tests {
         let body = event_body("test/first", json!({ "count": 42 }));
 
         let error = match handler
-            .run(
-                &headers,
-                &RunQueryParams { fn_id: first_fn_id },
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(first_fn_id), &body.to_string(), &body)
             .await
         {
             Ok(_) => panic!("mismatched payload should fail"),
@@ -1041,12 +1183,7 @@ mod tests {
         let body = event_body("test/first", json!({ "message": "hello" }));
 
         let error = match handler
-            .run(
-                &headers,
-                &RunQueryParams { fn_id },
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(fn_id), &body.to_string(), &body)
             .await
         {
             Ok(_) => panic!("cloud mode should reject missing primary signing key"),
@@ -1067,12 +1204,7 @@ mod tests {
         let body = event_body("test/first", json!({ "message": "hello" }));
 
         let error = match handler
-            .run(
-                &headers,
-                &RunQueryParams { fn_id },
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(fn_id), &body.to_string(), &body)
             .await
         {
             Ok(_) => panic!("cloud mode should still require a signature"),
@@ -1090,12 +1222,7 @@ mod tests {
         let body = event_body("test/first", json!({ "message": "hello" }));
 
         let response = handler
-            .run(
-                &headers,
-                &RunQueryParams { fn_id },
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(fn_id), &body.to_string(), &body)
             .await
             .expect("dev mode should allow unsigned requests");
 
@@ -1110,12 +1237,7 @@ mod tests {
         let headers = headers(&[(header::INNGEST_SIGNATURE, "t=1&s=deadbeef")]);
 
         let error = match handler
-            .run(
-                &headers,
-                &RunQueryParams { fn_id },
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(fn_id), &body.to_string(), &body)
             .await
         {
             Ok(_) => panic!("invalid signatures should fail in dev mode when a key is configured"),
@@ -1137,12 +1259,7 @@ mod tests {
         let headers = headers(&[(header::INNGEST_SIGNATURE, &signature)]);
 
         let response = handler
-            .run(
-                &headers,
-                &RunQueryParams { fn_id },
-                &body.to_string(),
-                &body,
-            )
+            .run(&headers, &run_query(fn_id), &body.to_string(), &body)
             .await
             .expect("fallback signing key should validate the request");
 
@@ -1306,6 +1423,201 @@ mod tests {
         assert_eq!(records[1].env, Some("branch".to_string()));
     }
 
+    #[tokio::test]
+    async fn handler_passes_requested_step_id_to_function_context() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> =
+            client.create_function(
+                FunctionOpts::new("step-id"),
+                Trigger::event("test/first"),
+                |input: Input<FirstEvent>, _step| async move {
+                    Ok(json!({ "step_id": input.ctx.step_id }))
+                },
+            );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let body = event_body("test/first", json!({ "message": "hello" }));
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &RunQueryParams {
+                    fn_id,
+                    step_id: "custom-step".to_string(),
+                },
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("handler should pass the requested step id through");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, json!({ "step_id": "custom-step" }));
+    }
+
+    #[tokio::test]
+    async fn targeted_step_requests_execute_the_matching_hashed_step() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("targeted"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, step| async move {
+                let value: Value = step
+                    .run("hello", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": true }))
+                    })
+                    .await?;
+                Ok(value)
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let body = event_body("test/first", json!({ "message": "hello" }));
+        let targeted_step_id = hash_step_id("hello");
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &RunQueryParams {
+                    fn_id,
+                    step_id: targeted_step_id.clone(),
+                },
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("matching targeted step should execute");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(response.body[0]["id"], targeted_step_id);
+        assert_eq!(response.body[0]["op"], "StepRun");
+        assert_eq!(response.body[0]["data"], json!({ "ok": true }));
+    }
+
+    #[tokio::test]
+    async fn targeted_step_requests_return_step_not_found_for_other_steps() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("targeted-miss"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, step| async move {
+                let _value: Value = step
+                    .run("hello", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": true }))
+                    })
+                    .await?;
+                Ok(json!({ "unexpected": true }))
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let body = event_body("test/first", json!({ "message": "hello" }));
+        let missing_step_id = hash_step_id("other");
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &RunQueryParams {
+                    fn_id,
+                    step_id: missing_step_id.clone(),
+                },
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("missing targeted steps should yield step-not-found");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(
+            response.body,
+            json!([{ "id": missing_step_id, "op": "StepNotFound" }])
+        );
+    }
+
+    #[tokio::test]
+    async fn use_api_requests_fetch_events_and_steps_with_auth_headers() {
+        let (origin, records) = spawn_run_api_server().await;
+        let client = Inngest::new("test-app").dev(&origin).env("branch");
+        let mut handler = Handler::new(&client).signing_key(PRIMARY_SIGNING_KEY);
+
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("hydrate"),
+            Trigger::event("test/first"),
+            |input: Input<FirstEvent>, step| async move {
+                let memoized: String = step
+                    .run("memoized-step", || async move {
+                        Ok::<_, StepTestError>("rerun".to_string())
+                    })
+                    .await?;
+
+                Ok(json!({
+                    "event_message": input.event.data.message,
+                    "events_len": input.events.len(),
+                    "memoized": memoized,
+                }))
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let body = json!({
+            "ctx": { "attempt": 1, "env": "test", "run_id": "run-1" },
+            "event": {
+                "id": null,
+                "name": "test/first",
+                "data": { "message": "placeholder" },
+                "ts": null,
+                "v": null
+            },
+            "events": [],
+            "use_api": true,
+            "steps": {}
+        });
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &run_query(fn_id),
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("use_api payloads should hydrate from the API");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            response.body,
+            json!({
+                "event_message": "from-api",
+                "events_len": 2,
+                "memoized": "memoized-from-api",
+            })
+        );
+
+        let records = records.lock().await;
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].path, "/v0/runs/run-1/batch");
+        assert_eq!(records[1].path, "/v0/runs/run-1/actions");
+        assert_eq!(
+            records[0].authorization,
+            Some(format!(
+                "Bearer {}",
+                Signature::new(PRIMARY_SIGNING_KEY)
+                    .hash()
+                    .expect("primary signing key should hash"),
+            ))
+        );
+        assert_eq!(records[0].sdk, Some(crate::version::sdk()));
+        assert_eq!(
+            records[0].req_version,
+            Some(crate::version::EXECUTION_VERSION.to_string())
+        );
+        assert_eq!(records[0].env, Some("branch".to_string()));
+        assert_eq!(records[1].env, Some("branch".to_string()));
+    }
+
     fn event_body(name: &str, data: Value) -> Value {
         json!({
             "ctx": { "attempt": 1, "env": "test", "run_id": "run-1" },
@@ -1320,6 +1632,13 @@ mod tests {
             "use_api": false,
             "steps": {}
         })
+    }
+
+    fn run_query(fn_id: String) -> RunQueryParams {
+        RunQueryParams {
+            fn_id,
+            step_id: default_step_id(),
+        }
     }
 
     fn registered_handler(
@@ -1387,6 +1706,12 @@ mod tests {
         format!("t={timestamp}&s={signature}")
     }
 
+    fn hash_step_id(id: &str) -> String {
+        let mut hasher = sha1::Sha1::new();
+        hasher.update(id.as_bytes());
+        base16::encode_lower(&hasher.finalize())
+    }
+
     async fn spawn_sync_server(
         responses: Vec<(StatusCode, String)>,
     ) -> (String, Arc<Mutex<Vec<SyncRequestRecord>>>) {
@@ -1401,6 +1726,79 @@ mod tests {
         let app = Router::new()
             .route("/fn/register", post(record_sync_request))
             .with_state(state);
+
+        tokio::spawn(async move {
+            axum::Server::from_tcp(listener)
+                .expect("server should bind")
+                .serve(app.into_make_service())
+                .await
+                .expect("server should serve");
+        });
+
+        (format!("http://{}", addr), records)
+    }
+
+    async fn spawn_run_api_server() -> (String, Arc<Mutex<Vec<SyncRequestRecord>>>) {
+        async fn fetch_batch(
+            State(records): State<Arc<Mutex<Vec<SyncRequestRecord>>>>,
+            headers: HeaderMap,
+            uri: Uri,
+        ) -> impl IntoResponse {
+            records.lock().await.push(SyncRequestRecord {
+                authorization: header_value(&headers, "authorization"),
+                env: header_value(&headers, header::INNGEST_ENV),
+                path: uri.path().to_string(),
+                query: uri.query().map(|query| query.to_string()),
+                req_version: header_value(&headers, header::INNGEST_REQ_VERSION),
+                sdk: header_value(&headers, header::INNGEST_SDK),
+            });
+
+            Json(json!([
+                {
+                    "id": "evt-1",
+                    "name": "test/first",
+                    "data": { "message": "from-api" },
+                    "ts": null,
+                    "v": null
+                },
+                {
+                    "id": "evt-2",
+                    "name": "test/first",
+                    "data": { "message": "from-api-2" },
+                    "ts": null,
+                    "v": null
+                }
+            ]))
+        }
+
+        async fn fetch_actions(
+            State(records): State<Arc<Mutex<Vec<SyncRequestRecord>>>>,
+            headers: HeaderMap,
+            uri: Uri,
+        ) -> impl IntoResponse {
+            records.lock().await.push(SyncRequestRecord {
+                authorization: header_value(&headers, "authorization"),
+                env: header_value(&headers, header::INNGEST_ENV),
+                path: uri.path().to_string(),
+                query: uri.query().map(|query| query.to_string()),
+                req_version: header_value(&headers, header::INNGEST_REQ_VERSION),
+                sdk: header_value(&headers, header::INNGEST_SDK),
+            });
+
+            Json(json!({
+                "3ce0995fad5ea2556082d4021be335153233edf9": {
+                    "data": "memoized-from-api"
+                }
+            }))
+        }
+
+        let records = Arc::new(Mutex::new(Vec::new()));
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
+        let addr = listener.local_addr().expect("listener addr should exist");
+        let app = Router::new()
+            .route("/v0/runs/run-1/batch", get(fetch_batch))
+            .route("/v0/runs/run-1/actions", get(fetch_actions))
+            .with_state(Arc::clone(&records));
 
         tokio::spawn(async move {
             axum::Server::from_tcp(listener)

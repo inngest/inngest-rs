@@ -255,6 +255,7 @@ fn fallible_step_run(client: &Inngest) -> ServableFn<StepRunEventData, Error> {
                 Err(err) => match err {
                     DevError::NoRetry(_) => println!("No retry"),
                     DevError::RetryAt(_) => println!("Retry after"),
+                    DevError::Step(err) => println!("Step {}", err),
                     DevError::Basic(msg) => println!("Basic {}", msg),
                 },
                 Ok(_) => println!("Success"),
