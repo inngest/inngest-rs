@@ -1,10 +1,10 @@
-#+TITLE: Full Call Request Model
+#+TITLE: Call Request and Step Execution Conformance
 #+AUTHOR: Darwin D. Wu
-#+DATE: 2026-04-16
-#+STATUS: Draft
+#+DATE: 2026-04-20
+#+STATUS: Active
 
 * Goal
-- Support the complete spec-defined call request payload and the required API fetch path for trimmed payloads.
+- Bring call-request parsing, step execution, stack handling, and trimmed-payload hydration into one spec-tracked milestone.
 
 * Scope
 - Request parsing
@@ -12,27 +12,64 @@
 - `ctx.disable_immediate_execution`
 - `ctx.stack`
 - `ctx.use_api` full-payload fetches
+- Root discovery vs targeted step execution
+- `StepRun`
+- `StepPlanned`
+- `StepError`
+- `StepNotFound`
+- Ordered memoization and recovery behavior
+- Parallel step discovery
+- Probe capability reporting for shipped execution features
 
 * Checklist
-- [ ] Parse `stepId` from query parameters
-- [ ] Parse `ctx.disable_immediate_execution`
-- [ ] Parse `ctx.stack.current` and `ctx.stack.stack`
+- [X] Parse `stepId` from query parameters
+- [ ] Enforce `ctx.disable_immediate_execution` semantics during step execution
+- [X] Parse `ctx.stack.current` and `ctx.stack.stack`
 - [ ] Parse `ctx.use_api` from the spec-defined location
-- [ ] Parse any additional call context needed for later milestones
-- [ ] Implement event batch retrieval from `/v0/runs/:run_id/batch`
-- [ ] Implement memoized step retrieval from `/v0/runs/:run_id/actions`
-- [ ] Authenticate those API calls with the correct signing key
-- [ ] Apply fallback signing key behavior to those API calls
-- [ ] Replace request body data with fetched data when `use_api` is true
-- [ ] Fail the call request with `500` when either fetch fails
-- [ ] Add tests for raw request parsing
-- [ ] Add tests for `use_api` fetch success and failure paths
+- [X] Parse additional call context needed by the current execution path
+- [X] Implement event batch retrieval from `/v0/runs/:run_id/batch`
+- [X] Implement memoized step retrieval from `/v0/runs/:run_id/actions`
+- [X] Authenticate those API calls with the primary signing key
+- [X] Apply fallback signing key behavior to those API calls after `401`
+- [X] Replace request body data with fetched data when `use_api` hydration is enabled
+- [X] Distinguish root execution (`stepId=step`) from targeted step execution (`stepId!=step`)
+- [X] Prevent targeted step executions from running unrelated new steps
+- [ ] Add explicit support for planning a step without immediately running it
+- [ ] Add explicit support for returning `StepPlanned`
+- [X] Add explicit support for returning `StepRun`
+- [X] Add explicit support for returning `StepError`
+- [X] Add explicit support for returning `StepNotFound`
+- [ ] Ensure immediate execution only happens when the spec allows it
+- [X] Ensure targeted executions search for the requested step while memoizing prior state
+- [X] Use `ctx.stack.stack` ordering while memoizing previous steps
+- [X] Detect divergence from the expected memoization order
+- [X] Surface a warning path for changed or non-deterministic functions
+- [X] Implement recovery logic that falls back to earliest-available matching steps
+- [ ] Support reporting multiple new steps in a single call request
+- [ ] Ensure subsequent requests honor `disable_immediate_execution=true`
+- [ ] Populate introspection `capabilities` for shipped execution features
+- [X] Add tests for targeted step execution flow
+- [X] Add tests for missing-target-step behavior
+- [X] Add tests for ordered memoization
+- [X] Add tests for recovery when code shape changes mid-run
+- [X] Add tests for `use_api` fetch success
+- [ ] Add tests for raw request parsing of the full spec shape
+- [ ] Add tests for `use_api` fetch failure paths
+- [ ] Add tests for `use_api` fallback-auth paths
+- [ ] Add tests for `disable_immediate_execution` behavior
+- [ ] Add tests for parallel step discovery and forced planning paths
 
 * Exit Criteria
 - [ ] The handler understands the full call-request shape required by the spec
-- [ ] Trimmed payload requests work by fetching data from the API
-- [ ] `stepId`, `disable_immediate_execution`, and stack data are available to later execution logic
+- [ ] Trimmed payload requests work by fetching data from the API using the spec-defined request shape
+- [ ] Root discovery, targeted execution, and stack recovery follow the spec
+- [ ] Immediate execution and planning behavior match the spec's gating rules
+- [ ] Probe capability reporting reflects the shipped execution feature set
 
 * Out of Scope
-- Full targeted step execution
-- Parallel planning behavior
+- Expanded function configuration
+- Middleware
+- AI/gateway step types
+- Connect
+- Streaming
+- Checkpointing

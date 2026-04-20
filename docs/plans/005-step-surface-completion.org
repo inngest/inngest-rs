@@ -1,0 +1,33 @@
+#+TITLE: Remaining Step-Type Conformance
+#+AUTHOR: Darwin D. Wu
+#+DATE: 2026-04-20
+#+STATUS: Active
+
+* Goal
+- Finish the step-type gaps that remain after `run`, `sleep`, `wait_for_event`, `invoke`, and durable event send landed.
+
+* Scope
+- Invoke payload conformance cleanup
+- Deferred step-type documentation
+
+* Checklist
+- [X] Add a durable `step.send_event` or equivalent API
+- [X] Decide whether send-event is implemented as a dedicated opcode or a wrapped run step
+- [X] Ensure send-event behavior is retriable and memoized
+- [X] Return sent event IDs in a useful developer-facing form
+- [ ] Align invoke payload shape with the spec
+- [ ] Revisit invoke timeout and payload serialization behavior
+- [X] Add tests for durable event sending
+- [X] Add tests for invoke memoization and error handling
+- [ ] Document any intentionally deferred step types
+
+* Exit Criteria
+- [X] The core step API surface is no longer missing durable event send support
+- [ ] Invoke behavior is spec-compatible
+- [ ] Deferred step types are explicitly documented instead of silently absent
+
+* Out of Scope
+- Connect
+- Streaming
+- Checkpointing
+- Middleware
