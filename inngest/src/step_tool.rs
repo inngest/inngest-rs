@@ -22,6 +22,7 @@ use crate::{
 
 #[derive(Serialize, Clone)]
 enum Opcode {
+    StepPlanned,
     StepRun,
     StepError,
     Sleep,
@@ -170,6 +171,7 @@ pub struct Step {
     client: Inngest,
     state: state::State,
     target_step_id: String,
+    disable_immediate_execution: bool,
 }
 
 #[derive(Deserialize)]
@@ -188,16 +190,29 @@ impl<E> UserProvidedError<'_> for E where
 
 impl Step {
     /// Creates a step helper for the current function execution.
+    #[cfg(test)]
     pub(crate) fn new(
         client: Inngest,
         state: &HashMap<String, Option<Value>>,
         target_step_id: &str,
         stack: &[String],
     ) -> Self {
+        Self::new_with_execution_mode(client, state, target_step_id, stack, false)
+    }
+
+    /// Creates a step helper with explicit execution controls from the call request.
+    pub(crate) fn new_with_execution_mode(
+        client: Inngest,
+        state: &HashMap<String, Option<Value>>,
+        target_step_id: &str,
+        stack: &[String],
+        disable_immediate_execution: bool,
+    ) -> Self {
         Step {
             client,
             state: State::new(state, stack),
             target_step_id: target_step_id.to_string(),
+            disable_immediate_execution,
         }
     }
 
@@ -225,6 +240,15 @@ impl Step {
         self.state.take_memoized(key)
     }
 
+    fn reject_unrelated_target(&self, hashed: &str) -> Result<(), Error> {
+        if self.target_step_id != "step" && self.target_step_id != hashed {
+            self.push_missing_step(self.target_step_id.clone());
+            return Err(Error::Interrupt(FlowControlError::step_generator()));
+        }
+
+        Ok(())
+    }
+
     pub async fn run<T, E, F>(&self, id: &str, f: impl FnOnce() -> F) -> Result<T, Error>
     where
         T: for<'a> Deserialize<'a> + Serialize,
@@ -241,8 +265,18 @@ impl Step {
             };
         }
 
-        if self.target_step_id != "step" && self.target_step_id != hashed {
-            self.push_missing_step(self.target_step_id.clone());
+        self.reject_unrelated_target(&hashed)?;
+
+        if self.target_step_id == "step" && self.disable_immediate_execution {
+            self.push_op(GeneratorOpCode {
+                op: Opcode::StepPlanned,
+                id: hashed,
+                name: id.to_string(),
+                display_name: id.to_string(),
+                data: None,
+                error: None,
+                opts: json!({}),
+            });
             return Err(Error::Interrupt(FlowControlError::step_generator()));
         }
 
@@ -295,6 +329,7 @@ impl Step {
 
             // TODO: if no state exists, we need to signal to sleep
             None => {
+                self.reject_unrelated_target(&hashed)?;
                 let opts = json!({
                     "duration": duration::to_string(dur)
                 });
@@ -323,6 +358,7 @@ impl Step {
             Some(_) => Ok(()),
 
             None => {
+                self.reject_unrelated_target(&hashed)?;
                 let systime = self.unix_ts_to_systime(unix_ts_ms);
                 let dur = match systime.duration_since(SystemTime::now()) {
                     Ok(dur) => dur,
@@ -376,6 +412,7 @@ impl Step {
             }
 
             None => {
+                self.reject_unrelated_target(&hashed)?;
                 let mut wait_opts = json!({
                     "event": &opts.event,
                     "timeout": duration::to_string(opts.timeout),
@@ -415,6 +452,7 @@ impl Step {
             },
 
             None => {
+                self.reject_unrelated_target(&hashed)?;
                 let mut invoke_opts = json!({
                     "function_id": &opts.function_id,
                     "payload": {
