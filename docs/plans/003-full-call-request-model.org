@@ -1,7 +1,7 @@
 #+TITLE: Call Request and Step Execution Conformance
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-20
-#+STATUS: Active
+#+STATUS: Done
 
 * Goal
 - Bring call-request parsing, step execution, stack handling, and trimmed-payload hydration into one spec-tracked milestone.
@@ -24,6 +24,7 @@
 * Parallelism Design
 - The first Rust-native parallelism surface will be `inngest::group::parallel!`.
 - The macro will be the public API because it matches Rust expectations for heterogeneous async branches better than `Vec`-based callback APIs.
+- The macro takes the execution helper explicitly as `parallel!(step => branch_a, branch_b, ...)`.
 - The initial implementation targets the default "all" behavior only.
 - `race!` remains a follow-up item and is not required to complete this milestone.
 
@@ -60,13 +61,13 @@
 - [X] Add explicit support for returning `StepRun`
 - [X] Add explicit support for returning `StepError`
 - [X] Add explicit support for returning `StepNotFound`
-- [ ] Ensure immediate execution only happens when the spec allows it
+- [X] Ensure immediate execution only happens when the spec allows it
 - [X] Ensure targeted executions search for the requested step while memoizing prior state
 - [X] Use `ctx.stack.stack` ordering while memoizing previous steps
 - [X] Detect divergence from the expected memoization order
 - [X] Surface a warning path for changed or non-deterministic functions
 - [X] Implement recovery logic that falls back to earliest-available matching steps
-- [ ] Support reporting multiple new steps in a single call request
+- [X] Support reporting multiple new steps in a single call request
 - [X] Ensure subsequent requests honor `disable_immediate_execution=true`
 - [X] Populate introspection `capabilities` for shipped execution features
 - [X] Add tests for targeted step execution flow
@@ -78,17 +79,17 @@
 - [X] Add tests for `use_api` fetch failure paths
 - [X] Add tests for `use_api` fallback-auth paths
 - [X] Add tests for `disable_immediate_execution` behavior
-- [ ] Add tests for parallel step discovery and forced planning paths
-- [ ] Add tests for `group::parallel!` targeted replay and final `StepNotFound`
-- [ ] Add tests for mixed-step parallel discovery such as `run + sleep` or `run + invoke`
+- [X] Add tests for parallel step discovery and forced planning paths
+- [X] Add tests for `group::parallel!` targeted replay and final `StepNotFound`
+- [X] Add tests for mixed-step parallel discovery such as `run + sleep` or `run + invoke`
 
 * Exit Criteria
 - [X] The handler understands the full call-request shape required by the spec
 - [X] Trimmed payload requests work by fetching data from the API using the spec-defined request shape
-- [ ] Root discovery, targeted execution, and stack recovery follow the spec
-- [ ] Immediate execution and planning behavior match the spec's gating rules
+- [X] Root discovery, targeted execution, and stack recovery follow the spec
+- [X] Immediate execution and planning behavior match the spec's gating rules
 - [X] Probe capability reporting reflects the shipped execution feature set
-- [ ] `group::parallel!` supports multi-step discovery and targeted replay for the default all-mode
+- [X] `group::parallel!` supports multi-step discovery and targeted replay for the default all-mode
 
 * Out of Scope
 - Expanded function configuration, covered by `004`
