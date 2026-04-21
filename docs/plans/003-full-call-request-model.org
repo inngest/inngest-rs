@@ -91,10 +91,8 @@
 - [ ] `group::parallel!` supports multi-step discovery and targeted replay for the default all-mode
 
 * Out of Scope
-- Expanded function configuration
-- Middleware
-- AI/gateway step types
-- Connect
-- Streaming
-- Checkpointing
-- `race!` and other non-default parallel modes
+- Expanded function configuration, covered by `004`
+- Middleware, covered by `006`
+- AI/gateway step types, covered by `005`
+- Connect, streaming, and checkpointing, covered by `007`
+- `race!` and other non-default parallel modes, covered by `005`

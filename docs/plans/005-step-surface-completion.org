@@ -11,6 +11,7 @@
 - Invoke payload conformance cleanup
 - Advanced parallel step APIs
 - Parallel opcode metadata parity
+- AI/gateway step types
 - Deferred step-type documentation
 
 * Checklist
@@ -25,6 +26,8 @@
 - [ ] Emit explicit parallel-mode metadata where required for cross-SDK parity
 - [ ] Add tests for `race!` discovery and targeted replay behavior
 - [ ] Add tests for parallel-mode metadata in multi-step responses
+- [ ] Decide and document the support plan for AI/gateway step types
+- [ ] Implement any tractable AI/gateway step types that fit the existing runtime model, or explicitly document why they remain deferred
 - [X] Add tests for durable event sending
 - [X] Add tests for invoke memoization and error handling
 - [ ] Document any intentionally deferred step types
@@ -34,10 +37,9 @@
 - [ ] Invoke behavior is spec-compatible
 - [ ] The advanced parallel API surface beyond default `parallel!` is defined and tested
 - [ ] Multi-step parallel responses carry any required mode metadata
+- [ ] AI/gateway step-type support is either implemented or explicitly documented
 - [ ] Deferred step types are explicitly documented instead of silently absent
 
 * Out of Scope
-- Connect
-- Streaming
-- Checkpointing
-- Middleware
+- Connect, streaming, and checkpointing, covered by `007`
+- Middleware, covered by `006`

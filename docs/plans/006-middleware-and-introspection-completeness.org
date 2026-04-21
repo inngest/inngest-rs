@@ -33,5 +33,5 @@
 - [ ] Capability reporting is updated to reflect any newly shipped advanced execution features
 
 * Out of Scope
-- Connect implementation details
-- Checkpoint transport
+- Connect implementation details, covered by `007`
+- Checkpoint transport, covered by `007`

@@ -10,6 +10,7 @@
 - Public option types
 - Sync payload serialization
 - Validation of supported config shapes
+- Failure handler configuration
 
 * Checklist
 - [ ] Extend `FunctionOpts` to support the next tier of spec-defined fields
@@ -23,6 +24,7 @@
 - [ ] Add sync serialization for `throttle`
 - [ ] Add sync serialization for `singleton`
 - [ ] Add sync serialization for `timeouts`
+- [ ] Add public config surface and sync serialization for failure handlers
 - [ ] Decide and document validation rules for invalid or unsupported combinations
 - [ ] Add serialization tests for each new option surface
 - [ ] Update examples and README support notes to match the actual implementation
@@ -31,7 +33,7 @@
 - [ ] Function definitions can express the supported spec-level scheduling and control metadata
 - [ ] The sync payload matches the public API surface
 - [ ] The new config surface is covered by serialization tests
+- [ ] Failure handler configuration is represented consistently in the public API and sync payload
 
 * Out of Scope
-- Failure handlers
-- Middleware hooks
+- Middleware hooks, covered by `006`
