@@ -282,3 +282,87 @@ async fn memoized_step_errors_replay_without_rerunning_the_failed_step_body() {
     assert_eq!(step_error, "step exploded".to_string());
     assert_eq!(run.output, json!({ "step_error": "step exploded" }));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn parallel_groups_plan_and_replay_multiple_steps() {
+    let _lock = DevServerLock::acquire();
+    let _dev_server = DevServer::start().await;
+
+    let app_name = e2e_support::unique_name("parallel-group-app");
+    let event_name = e2e_support::unique_name("test.parallel.group");
+
+    let client = Inngest::new(&app_name).dev(e2e_support::DEV_SERVER_ORIGIN);
+    let run_id_state = Arc::new(Mutex::new(None::<String>));
+    let final_result_state = Arc::new(Mutex::new(None::<Vec<String>>));
+    let handler_invocations = Arc::new(AtomicUsize::new(0));
+    let first_step_invocations = Arc::new(AtomicUsize::new(0));
+    let second_step_invocations = Arc::new(AtomicUsize::new(0));
+
+    let run_id_capture = Arc::clone(&run_id_state);
+    let final_result_capture = Arc::clone(&final_result_state);
+    let handler_invocations_capture = Arc::clone(&handler_invocations);
+    let first_step_invocations_capture = Arc::clone(&first_step_invocations);
+    let second_step_invocations_capture = Arc::clone(&second_step_invocations);
+    let parallel_fn: ServableFn<EmptyEventData, Error> = client.create_function(
+        FunctionOpts::new("parallel-group-fn").name("Parallel Group Fn"),
+        Trigger::event(&event_name),
+        move |input: Input<EmptyEventData>, step: StepTool| {
+            let run_id_capture = Arc::clone(&run_id_capture);
+            let final_result_capture = Arc::clone(&final_result_capture);
+            let handler_invocations_capture = Arc::clone(&handler_invocations_capture);
+            let first_step_invocations_capture = Arc::clone(&first_step_invocations_capture);
+            let second_step_invocations_capture = Arc::clone(&second_step_invocations_capture);
+
+            async move {
+                handler_invocations_capture.fetch_add(1, Ordering::SeqCst);
+                *run_id_capture.lock().unwrap() = Some(input.ctx.run_id.clone());
+
+                let (first, second) = inngest::group::parallel!(step =>
+                    step.run("first", || {
+                        let first_step_invocations_capture =
+                            Arc::clone(&first_step_invocations_capture);
+                        async move {
+                            first_step_invocations_capture.fetch_add(1, Ordering::SeqCst);
+                            Ok::<_, MemoizedStepFailure>("first".to_string())
+                        }
+                    }).await?,
+                    step.run("second", || {
+                        let second_step_invocations_capture =
+                            Arc::clone(&second_step_invocations_capture);
+                        async move {
+                            second_step_invocations_capture.fetch_add(1, Ordering::SeqCst);
+                            Ok::<_, MemoizedStepFailure>("second".to_string())
+                        }
+                    }).await?,
+                )
+                .await?;
+
+                let results = vec![first, second];
+                *final_result_capture.lock().unwrap() = Some(results.clone());
+
+                Ok(json!(results))
+            }
+        },
+    );
+
+    let app = spawn_app(client.clone(), vec![parallel_fn.into()]).await;
+    app.sync().await;
+
+    client
+        .send_event(&Event::new(&event_name, EmptyEventData {}))
+        .await
+        .expect("parallel-group event should send successfully");
+
+    let run_id = wait_for_state(&run_id_state, Duration::from_secs(5)).await;
+    let run = wait_for_run_status(&run_id, "Completed", Duration::from_secs(15)).await;
+    let final_result = wait_for_state(&final_result_state, Duration::from_secs(5)).await;
+
+    assert_eq!(first_step_invocations.load(Ordering::SeqCst), 1);
+    assert_eq!(second_step_invocations.load(Ordering::SeqCst), 1);
+    assert_eq!(handler_invocations.load(Ordering::SeqCst), 4);
+    assert_eq!(
+        final_result,
+        vec!["first".to_string(), "second".to_string()]
+    );
+    assert_eq!(run.output, json!(["first", "second"]));
+}
