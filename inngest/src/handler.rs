@@ -145,10 +145,25 @@ where
                     })) {
                         Ok(fut) => match AssertUnwindSafe(fut).catch_unwind().await {
                             Ok(v) => match v {
-                                Ok(v) => Ok(SdkResponse {
-                                    status: 200,
-                                    body: v,
-                                }),
+                                Ok(v) => {
+                                    if query.step_id != default_step_id()
+                                        && step_tool.step_seen()
+                                        && !step_tool.target_found()
+                                    {
+                                        return Ok(SdkResponse {
+                                            status: 206,
+                                            body: json!([{
+                                                "id": query.step_id,
+                                                "op": "StepNotFound"
+                                            }]),
+                                        });
+                                    }
+
+                                    Ok(SdkResponse {
+                                        status: 200,
+                                        body: v,
+                                    })
+                                }
                                 Err(err) => match err.into() {
                                     Error::Interrupt(mut flow) => {
                                         flow.acknowledge();
@@ -177,6 +192,11 @@ where
                                                     (206, json!("null"))
                                                 };
                                                 Ok(SdkResponse { status, body })
+                                            }
+                                            FlowControlVariant::ParallelSkip => {
+                                                Err(basic_error!(
+                                                    "parallel skip leaked out of a parallel group"
+                                                ))
                                             }
                                         }
                                     }
@@ -897,6 +917,7 @@ mod tests {
         collections::{HashSet, VecDeque},
         net::TcpListener,
         sync::Arc,
+        time::Duration,
     };
     use tokio::sync::Mutex;
 
@@ -1693,6 +1714,204 @@ mod tests {
         assert_eq!(response.status, 206);
         assert_eq!(response.body[0]["op"], "StepRun");
         assert_eq!(response.body[0]["id"], targeted_step_id);
+    }
+
+    #[tokio::test]
+    async fn parallel_groups_report_multiple_planned_steps_in_one_response() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("parallel-planning"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, step| async move {
+                let (_first, _second) = crate::group::parallel!(step =>
+                    step.run("first", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "first" }))
+                    }).await?,
+                    step.run("second", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "second" }))
+                    }).await?,
+                )
+                .await?;
+                Ok(json!({ "unexpected": true }))
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let body = event_body("test/first", json!({ "message": "hello" }));
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &run_query(fn_id),
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("parallel discovery should return multiple steps");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(response.body.as_array().unwrap().len(), 2);
+        assert_eq!(response.body[0]["op"], "StepPlanned");
+        assert_eq!(response.body[0]["id"], hash_step_id("first"));
+        assert_eq!(response.body[1]["op"], "StepPlanned");
+        assert_eq!(response.body[1]["id"], hash_step_id("second"));
+    }
+
+    #[tokio::test]
+    async fn parallel_groups_execute_the_targeted_branch_after_planning() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("parallel-targeted"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, step| async move {
+                let (_first, _second) = crate::group::parallel!(step =>
+                    step.run("first", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "first" }))
+                    }).await?,
+                    step.run("second", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "second" }))
+                    }).await?,
+                )
+                .await?;
+                Ok(json!({ "unexpected": true }))
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let targeted_step_id = hash_step_id("second");
+        let first_step_id = hash_step_id("first");
+        let body = event_body_with_ctx(
+            "test/first",
+            json!({ "message": "hello" }),
+            json!({
+                "attempt": 1,
+                "disable_immediate_execution": true,
+                "env": "test",
+                "run_id": "run-1",
+                "use_api": false,
+                "stack": { "current": 0, "stack": [first_step_id] }
+            }),
+        );
+        let mut body = body;
+        body["steps"] = json!({
+            hash_step_id("first"): { "data": { "ok": "first" } }
+        });
+
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &RunQueryParams {
+                    fn_id,
+                    step_id: targeted_step_id.clone(),
+                },
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("targeted requests should search parallel branches");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(response.body[0]["op"], "StepRun");
+        assert_eq!(response.body[0]["id"], targeted_step_id);
+    }
+
+    #[tokio::test]
+    async fn parallel_groups_return_step_not_found_after_searching_all_branches() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("parallel-missing"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, step| async move {
+                let (_first, _second) = crate::group::parallel!(step =>
+                    step.run("first", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "first" }))
+                    }).await?,
+                    step.run("second", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "second" }))
+                    }).await?,
+                )
+                .await?;
+                Ok(json!({ "unexpected": true }))
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let missing_step_id = hash_step_id("other");
+        let body = event_body_with_ctx(
+            "test/first",
+            json!({ "message": "hello" }),
+            json!({
+                "attempt": 1,
+                "disable_immediate_execution": true,
+                "env": "test",
+                "run_id": "run-1",
+                "use_api": false,
+                "stack": { "current": 0, "stack": [] }
+            }),
+        );
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &RunQueryParams {
+                    fn_id,
+                    step_id: missing_step_id.clone(),
+                },
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("missing targeted steps should report step-not-found after the group search");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(
+            response.body,
+            json!([{ "id": missing_step_id, "op": "StepNotFound" }])
+        );
+    }
+
+    #[tokio::test]
+    async fn parallel_groups_can_mix_planned_and_async_ops() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("parallel-mixed"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, step| async move {
+                let (_planned, _sleep) = crate::group::parallel!(step =>
+                    step.run("first", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "first" }))
+                    }).await?,
+                    {
+                        step.sleep("pause", Duration::from_secs(5))?;
+                    },
+                )
+                .await?;
+                Ok(json!({ "unexpected": true }))
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let body = event_body("test/first", json!({ "message": "hello" }));
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &run_query(fn_id),
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("mixed parallel discovery should surface both ops");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(response.body.as_array().unwrap().len(), 2);
+        assert_eq!(response.body[0]["op"], "StepPlanned");
+        assert_eq!(response.body[1]["op"], "Sleep");
     }
 
     #[tokio::test]

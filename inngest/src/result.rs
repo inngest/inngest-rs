@@ -87,6 +87,7 @@ macro_rules! into_dev_result {
 #[derive(Debug)]
 pub enum FlowControlVariant {
     StepGenerator,
+    ParallelSkip,
 }
 
 #[derive(Debug)]
@@ -101,6 +102,15 @@ impl FlowControlError {
         FlowControlError {
             acknowledged: false,
             variant: FlowControlVariant::StepGenerator,
+        }
+    }
+
+    /// Create a branch-local flow control error used to skip unrelated work
+    /// while searching a parallel group for a targeted step.
+    pub(crate) fn parallel_skip() -> Self {
+        FlowControlError {
+            acknowledged: false,
+            variant: FlowControlVariant::ParallelSkip,
         }
     }
 

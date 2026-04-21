@@ -2,6 +2,7 @@ pub mod client;
 pub(crate) mod config;
 pub mod event;
 pub mod function;
+pub mod group;
 pub mod handler;
 pub mod header;
 pub mod result;
