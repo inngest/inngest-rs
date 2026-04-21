@@ -5,9 +5,12 @@
 
 * Goal
 - Finish the step-type gaps that remain after `run`, `sleep`, `wait_for_event`, `invoke`, and durable event send landed.
+- Finish the next parallel step-surface features deferred from `003`.
 
 * Scope
 - Invoke payload conformance cleanup
+- Advanced parallel step APIs
+- Parallel opcode metadata parity
 - Deferred step-type documentation
 
 * Checklist
@@ -17,6 +20,11 @@
 - [X] Return sent event IDs in a useful developer-facing form
 - [ ] Align invoke payload shape with the spec
 - [ ] Revisit invoke timeout and payload serialization behavior
+- [ ] Add a public `inngest::group::race!` API
+- [ ] Decide and document the Rust-native relationship between `parallel!` and `race!`
+- [ ] Emit explicit parallel-mode metadata where required for cross-SDK parity
+- [ ] Add tests for `race!` discovery and targeted replay behavior
+- [ ] Add tests for parallel-mode metadata in multi-step responses
 - [X] Add tests for durable event sending
 - [X] Add tests for invoke memoization and error handling
 - [ ] Document any intentionally deferred step types
@@ -24,6 +32,8 @@
 * Exit Criteria
 - [X] The core step API surface is no longer missing durable event send support
 - [ ] Invoke behavior is spec-compatible
+- [ ] The advanced parallel API surface beyond default `parallel!` is defined and tested
+- [ ] Multi-step parallel responses carry any required mode metadata
 - [ ] Deferred step types are explicitly documented instead of silently absent
 
 * Out of Scope

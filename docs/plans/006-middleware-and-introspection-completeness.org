@@ -10,6 +10,7 @@
 - Client middleware
 - Function middleware
 - Event send lifecycle hooks
+- Remaining introspection capability reporting for advanced execution features
 
 * Checklist
 - [ ] Define an idiomatic Rust middleware API for client-level middleware
@@ -24,12 +25,13 @@
 - [ ] Add event-send lifecycle hooks
 - [ ] Allow middleware to mutate context, memoized step data, output, errors, and outbound events
 - [ ] Add tests for middleware ordering and mutation points
+- [ ] Extend probe/introspection capability reporting when advanced parallel execution features ship
 
 * Exit Criteria
 - [ ] Middleware exists with the required lifecycle guarantees
 - [ ] Middleware behavior is test-covered
+- [ ] Capability reporting is updated to reflect any newly shipped advanced execution features
 
 * Out of Scope
-- Probe and introspection capability reporting
 - Connect implementation details
 - Checkpoint transport
