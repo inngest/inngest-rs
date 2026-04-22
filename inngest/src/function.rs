@@ -31,11 +31,21 @@ pub struct InputCtx {
 ///
 /// Durations are serialized as Inngest time strings such as `5m` or `30s`.
 /// Raw strings can be used when the spec accepts an expression or ISO 8601
-/// timestamp.
+/// timestamp. Empty string values are rejected when building the sync payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FunctionTime {
     Duration(Duration),
     String(String),
+}
+
+impl FunctionTime {
+    fn validate(&self, field: &str) -> Result<(), String> {
+        if matches!(self, Self::String(value) if value.trim().is_empty()) {
+            return Err(format!("{field} cannot be empty"));
+        }
+
+        Ok(())
+    }
 }
 
 impl From<Duration> for FunctionTime {
@@ -118,6 +128,10 @@ impl FunctionCancel {
 }
 
 /// Configures event batching for a function trigger.
+///
+/// Supported sync payloads require `max_size` to be between `1` and `100`.
+/// Duration-based timeouts are validated to the spec's `1s` to `60s` range
+/// when the sync payload is built.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct FunctionBatchEvents {
     #[serde(rename = "maxSize")]
@@ -274,6 +288,9 @@ impl FunctionConcurrencyOption {
 }
 
 /// Configures how function executions are concurrency-limited.
+///
+/// Keyed concurrency supports at most two options and is validated when the
+/// sync payload is built.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum FunctionConcurrency {
@@ -450,6 +467,9 @@ impl FunctionOpts {
     }
 
     /// Sets an idempotency expression for the function.
+    ///
+    /// When present, the sync payload omits `rate_limit` to match the spec's
+    /// idempotency precedence rules.
     pub fn idempotency(mut self, idempotency: &str) -> Self {
         self.idempotency = Some(idempotency.to_string());
         self
@@ -613,6 +633,90 @@ pub struct Function {
     pub singleton: Option<FunctionSingleton>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timeouts: Option<FunctionTimeouts>,
+}
+
+impl Function {
+    /// Validates supported function config shapes during sync payload
+    /// construction.
+    pub fn validate(&self) -> Result<(), String> {
+        if let Some(batch_events) = &self.batch_events {
+            if batch_events.max_size == 0 || batch_events.max_size > 100 {
+                return Err(format!(
+                    "function {} batchEvents.maxSize must be between 1 and 100",
+                    self.id
+                ));
+            }
+
+            batch_events
+                .timeout
+                .validate(&format!("function {} batchEvents.timeout", self.id))?;
+
+            if let FunctionTime::Duration(timeout) = &batch_events.timeout {
+                if *timeout < Duration::from_secs(1) || *timeout > Duration::from_secs(60) {
+                    return Err(format!(
+                        "function {} batchEvents.timeout must be between 1s and 60s",
+                        self.id
+                    ));
+                }
+            }
+        }
+
+        if let Some(FunctionConcurrency::Keyed(options)) = &self.concurrency {
+            if options.is_empty() {
+                return Err(format!(
+                    "function {} concurrency must include at least one keyed option",
+                    self.id
+                ));
+            }
+
+            if options.len() > 2 {
+                return Err(format!(
+                    "function {} concurrency supports at most two keyed options",
+                    self.id
+                ));
+            }
+        }
+
+        for cancel in &self.cancel {
+            if let Some(timeout) = &cancel.timeout {
+                timeout.validate(&format!("function {} cancel.timeout", self.id))?;
+            }
+        }
+
+        if let Some(rate_limit) = &self.rate_limit {
+            rate_limit
+                .period
+                .validate(&format!("function {} rateLimit.period", self.id))?;
+        }
+
+        if let Some(debounce) = &self.debounce {
+            debounce
+                .period
+                .validate(&format!("function {} debounce.period", self.id))?;
+
+            if let Some(timeout) = &debounce.timeout {
+                timeout.validate(&format!("function {} debounce.timeout", self.id))?;
+            }
+        }
+
+        if let Some(throttle) = &self.throttle {
+            throttle
+                .period
+                .validate(&format!("function {} throttle.period", self.id))?;
+        }
+
+        if let Some(timeouts) = &self.timeouts {
+            if let Some(start) = &timeouts.start {
+                start.validate(&format!("function {} timeouts.start", self.id))?;
+            }
+
+            if let Some(finish) = &timeouts.finish {
+                finish.validate(&format!("function {} timeouts.finish", self.id))?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]

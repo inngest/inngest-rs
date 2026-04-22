@@ -14,7 +14,7 @@ use crate::{
     event::{Event, InngestEvent},
     function::{Function, FunctionOpts, Input, InputCtx, ServableFn, Trigger},
     header::{self, Headers},
-    result::{Error, FlowControlVariant, SdkResponse},
+    result::{DevError, Error, FlowControlVariant, SdkResponse},
     sdk::Request,
     signature::Signature,
     step_tool::Step as StepTool,
@@ -409,7 +409,7 @@ impl Handler {
         framework: &str,
         raw_body: &str,
     ) -> Result<IntrospectResult, Error> {
-        let payload = self.sync_payload(headers, framework);
+        let payload = self.sync_payload(headers, framework)?;
         let function_count = payload.functions.len() as u32;
         let has_event_key = self.has_event_key();
         let has_signing_key = self.has_signing_key();
@@ -504,7 +504,7 @@ impl Handler {
         key.and_then(|key| Signature::new(&key).hash().ok())
     }
 
-    fn sync_payload(&self, headers: &Headers, framework: &str) -> Request {
+    fn sync_payload(&self, headers: &Headers, framework: &str) -> Result<Request, Error> {
         let app_id = self.inngest.app_id();
         let functions: Vec<Function> = self
             .funcs
@@ -512,7 +512,13 @@ impl Handler {
             .map(|f| f.function(&self.app_serve_origin(headers), &self.app_serve_path()))
             .collect();
 
-        Request {
+        for function in &functions {
+            function
+                .validate()
+                .map_err(|err| basic_error!("invalid function config: {}", err))?;
+        }
+
+        Ok(Request {
             app_name: app_id.clone(),
             framework: framework.to_string(),
             functions,
@@ -522,7 +528,7 @@ impl Handler {
                 self.app_serve_path()
             ),
             ..Default::default()
-        }
+        })
     }
 
     pub async fn sync(
@@ -531,7 +537,12 @@ impl Handler {
         query: &SyncQueryParams,
         framework: &str,
     ) -> Result<SyncResponse, String> {
-        let req = self.sync_payload(_headers, framework);
+        let req = self
+            .sync_payload(_headers, framework)
+            .map_err(|err| match err {
+                Error::Dev(DevError::Basic(message)) => message,
+                other => format!("{other:?}"),
+            })?;
         let sync_url = format!(
             "{}/fn/register",
             self.inngest.inngest_api_origin().trim_end_matches('/')
@@ -1201,7 +1212,9 @@ mod tests {
 
         handler.register_fns(vec![first_fn.into(), second_fn.into()]);
 
-        let payload = handler.sync_payload(&Headers::from(HeaderMap::new()), "axum");
+        let payload = handler
+            .sync_payload(&Headers::from(HeaderMap::new()), "axum")
+            .expect("sync payload should serialize");
         let function_ids: HashSet<String> = payload
             .functions
             .into_iter()
@@ -1231,7 +1244,9 @@ mod tests {
 
         handler.register_fn(first_fn);
 
-        let payload = handler.sync_payload(&Headers::from(HeaderMap::new()), "axum");
+        let payload = handler
+            .sync_payload(&Headers::from(HeaderMap::new()), "axum")
+            .expect("sync payload should serialize");
         let function = payload
             .functions
             .into_iter()
@@ -1299,7 +1314,9 @@ mod tests {
 
         handler.register_fn(func);
 
-        let payload = handler.sync_payload(&Headers::from(HeaderMap::new()), "axum");
+        let payload = handler
+            .sync_payload(&Headers::from(HeaderMap::new()), "axum")
+            .expect("sync payload should serialize");
         let function = payload
             .functions
             .into_iter()
@@ -1385,7 +1402,9 @@ mod tests {
 
         handler.register_fn(func);
 
-        let payload = handler.sync_payload(&Headers::from(HeaderMap::new()), "axum");
+        let payload = handler
+            .sync_payload(&Headers::from(HeaderMap::new()), "axum")
+            .expect("sync payload should serialize");
         let function = payload
             .functions
             .into_iter()
@@ -1395,6 +1414,72 @@ mod tests {
 
         assert_eq!(serialized["idempotency"], json!("event.data.id"));
         assert!(serialized.get("rateLimit").is_none());
+    }
+
+    #[test]
+    fn sync_payload_rejects_batch_configs_outside_spec_limits() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first")
+                .batch_events(FunctionBatchEvents::new(101, Duration::from_secs(0))),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, _step| async move { Ok(json!({ "ok": true })) },
+        );
+
+        handler.register_fn(func);
+
+        let error = handler
+            .sync_payload(&Headers::from(HeaderMap::new()), "axum")
+            .expect_err("invalid batch config should be rejected");
+
+        assert_basic_error(error, "batchEvents.maxSize must be between 1 and 100");
+    }
+
+    #[test]
+    fn sync_payload_rejects_batch_timeout_outside_spec_limits() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first")
+                .batch_events(FunctionBatchEvents::new(10, Duration::from_secs(61))),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, _step| async move { Ok(json!({ "ok": true })) },
+        );
+
+        handler.register_fn(func);
+
+        let error = handler
+            .sync_payload(&Headers::from(HeaderMap::new()), "axum")
+            .expect_err("invalid batch timeout should be rejected");
+
+        assert_basic_error(error, "batchEvents.timeout must be between 1s and 60s");
+    }
+
+    #[test]
+    fn sync_payload_rejects_concurrency_with_more_than_two_keyed_limits() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first").concurrency(FunctionConcurrency::keyed(vec![
+                FunctionConcurrencyOption::new(1),
+                FunctionConcurrencyOption::new(2),
+                FunctionConcurrencyOption::new(3),
+            ])),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, _step| async move { Ok(json!({ "ok": true })) },
+        );
+
+        handler.register_fn(func);
+
+        let error = handler
+            .sync_payload(&Headers::from(HeaderMap::new()), "axum")
+            .expect_err("invalid concurrency config should be rejected");
+
+        assert_basic_error(error, "concurrency supports at most two keyed options");
     }
 
     #[tokio::test]

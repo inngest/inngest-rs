@@ -27,14 +27,14 @@
 - [X] Add sync serialization for `singleton`
 - [X] Add sync serialization for `timeouts`
 - [ ] Add public `on_failure` config surface and sync serialization for failure handlers
-- [ ] Decide and document validation rules for invalid or unsupported combinations
-- [ ] Decide whether invalid configs are rejected eagerly in builders, at registration time, or only during sync serialization
-- [ ] Validate and document `idempotency` overriding `rateLimit`
-- [ ] Validate and document `batchEvents.maxSize` and `batchEvents.timeout` constraints
-- [ ] Validate and document supported `concurrency` forms, including numeric shorthand vs keyed entries and the maximum entry count
+- [X] Decide and document validation rules for invalid or unsupported combinations
+- [X] Decide whether invalid configs are rejected eagerly in builders, at registration time, or only during sync serialization
+- [X] Validate and document `idempotency` overriding `rateLimit`
+- [X] Validate and document `batchEvents.maxSize` and `batchEvents.timeout` constraints
+- [X] Validate and document supported `concurrency` forms, including numeric shorthand vs keyed entries and the maximum entry count
 - [ ] Decide and document whether failure handlers intentionally ignore inherited concurrency, singleton, and retry settings from the parent function
 - [X] Add serialization tests for each new option surface
-- [ ] Add negative tests for invalid config shapes and unsupported combinations
+- [X] Add negative tests for invalid config shapes and unsupported combinations
 - [ ] Update examples and README support notes to match the actual implementation
 - [ ] Update feature/support documentation to distinguish implemented config metadata from still-deferred runtime features
 
