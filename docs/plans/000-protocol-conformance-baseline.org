@@ -32,7 +32,7 @@
 - [X] No known wire-format mismatches remain in the base HTTP path
 
 * Out of Scope
-- Step execution model changes
-- Full payload retrieval
-- Parallelism
-- Connect, streaming, checkpointing
+- Step execution model changes, covered by `003`
+- Full payload retrieval, covered by `003`
+- Parallelism, covered by `003` and `005`
+- Connect, streaming, and checkpointing, covered by `007`

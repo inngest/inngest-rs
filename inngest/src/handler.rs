@@ -120,8 +120,6 @@ where
                         }
                     };
 
-                    let _ = data._use_api;
-
                     let input = Input {
                         event: data.event,
                         events: data.events,
@@ -134,11 +132,12 @@ where
                         },
                     };
 
-                    let step_tool = StepTool::new(
+                    let step_tool = StepTool::new_with_execution_mode(
                         client.clone(),
                         &data.steps,
                         &query.step_id,
                         &data.ctx.stack.stack,
+                        data.ctx.disable_immediate_execution,
                     );
 
                     match std::panic::catch_unwind(AssertUnwindSafe(|| {
@@ -146,10 +145,25 @@ where
                     })) {
                         Ok(fut) => match AssertUnwindSafe(fut).catch_unwind().await {
                             Ok(v) => match v {
-                                Ok(v) => Ok(SdkResponse {
-                                    status: 200,
-                                    body: v,
-                                }),
+                                Ok(v) => {
+                                    if query.step_id != default_step_id()
+                                        && step_tool.step_seen()
+                                        && !step_tool.target_found()
+                                    {
+                                        return Ok(SdkResponse {
+                                            status: 206,
+                                            body: json!([{
+                                                "id": query.step_id,
+                                                "op": "StepNotFound"
+                                            }]),
+                                        });
+                                    }
+
+                                    Ok(SdkResponse {
+                                        status: 200,
+                                        body: v,
+                                    })
+                                }
                                 Err(err) => match err.into() {
                                     Error::Interrupt(mut flow) => {
                                         flow.acknowledge();
@@ -178,6 +192,11 @@ where
                                                     (206, json!("null"))
                                                 };
                                                 Ok(SdkResponse { status, body })
+                                            }
+                                            FlowControlVariant::ParallelSkip => {
+                                                Err(basic_error!(
+                                                    "parallel skip leaked out of a parallel group"
+                                                ))
                                             }
                                         }
                                     }
@@ -382,6 +401,7 @@ impl Handler {
         let has_signing_key = self.has_signing_key();
         let has_signing_key_fallback = self.has_signing_key_fallback();
         let schema_version = PROBE_SCHEMA_VERSION.to_string();
+        let capabilities = Some(ProbeCapabilities::trust_probe());
         let authentication_succeeded = headers
             .signature()
             .map(|sig| self.verify_signature(&sig, raw_body).is_ok());
@@ -409,6 +429,7 @@ impl Handler {
                     event_api_origin,
                     event_key_hash,
                     authentication_succeeded: true,
+                    capabilities: capabilities.clone(),
                     env: self.inngest.env.clone(),
                     extra: None,
                     framework: framework.to_string(),
@@ -431,6 +452,7 @@ impl Handler {
         Ok(IntrospectResult::Unauthenticated(Box::new(
             IntrospectUnauthedResult {
                 authentication_succeeded,
+                capabilities,
                 extra: None,
                 function_count,
                 has_event_key,
@@ -587,11 +609,7 @@ impl Handler {
     // run the function
 
     async fn hydrate_run_body(&self, body: &Value) -> Result<Value, Error> {
-        if !body
-            .get("use_api")
-            .and_then(Value::as_bool)
-            .unwrap_or_default()
-        {
+        if !run_request_uses_api(body) {
             return Ok(body.clone());
         }
 
@@ -615,6 +633,7 @@ impl Handler {
         hydrated["steps"] = serde_json::to_value(steps)
             .map_err(|err| basic_error!("error serializing hydrated steps: {}", err))?;
         hydrated["use_api"] = json!(false);
+        hydrated["ctx"]["use_api"] = json!(false);
 
         Ok(hydrated)
     }
@@ -735,8 +754,8 @@ struct RunRequestBody<T: 'static> {
     ctx: RunRequestCtx,
     event: Event<T>,
     events: Vec<Event<T>>,
-    #[serde(rename = "use_api")]
-    _use_api: bool,
+    #[serde(default, rename = "use_api")]
+    _legacy_use_api: bool,
     steps: HashMap<String, Option<Value>>,
     // version: i32,
 }
@@ -745,11 +764,13 @@ struct RunRequestBody<T: 'static> {
 struct RunRequestCtx {
     attempt: u8,
     #[serde(default)]
-    _disable_immediate_execution: bool,
+    disable_immediate_execution: bool,
     env: String,
     // fn_id: String,
     run_id: String,
     // step_id: String,
+    #[serde(default)]
+    _use_api: bool,
     #[serde(default)]
     stack: RunRequestCtxStack,
 }
@@ -760,6 +781,26 @@ struct RunRequestCtxStack {
     _current: u32,
     #[serde(default)]
     stack: Vec<String>,
+}
+
+#[derive(Clone, Serialize)]
+struct ProbeCapabilities {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    connect: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "in_band_sync")]
+    in_band_sync: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "trust_probe")]
+    trust_probe: Option<String>,
+}
+
+impl ProbeCapabilities {
+    fn trust_probe() -> Self {
+        Self {
+            connect: None,
+            in_band_sync: None,
+            trust_probe: Some("v1".to_string()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -781,6 +822,8 @@ pub enum IntrospectResult {
 #[derive(Serialize)]
 pub struct IntrospectUnauthedResult {
     authentication_succeeded: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capabilities: Option<ProbeCapabilities>,
     extra: Option<Value>,
     function_count: u32,
     has_event_key: bool,
@@ -797,6 +840,8 @@ pub struct IntrospectAuthedResult {
     event_api_origin: String,
     event_key_hash: Option<String>,
     authentication_succeeded: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capabilities: Option<ProbeCapabilities>,
     env: Option<String>,
     extra: Option<Value>,
     framework: String,
@@ -845,6 +890,15 @@ pub struct InngestSyncSuccess {
     modified: Option<bool>,
 }
 
+fn run_request_uses_api(body: &Value) -> bool {
+    body.get("ctx")
+        .and_then(Value::as_object)
+        .and_then(|ctx| ctx.get("use_api"))
+        .and_then(Value::as_bool)
+        .or_else(|| body.get("use_api").and_then(Value::as_bool))
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -854,7 +908,7 @@ mod tests {
         http::{HeaderMap, StatusCode, Uri},
         response::IntoResponse,
         routing::{get, post},
-        Json, Router,
+        Router,
     };
     use hmac::{Hmac, Mac};
     use serde::{Deserialize, Serialize};
@@ -863,6 +917,7 @@ mod tests {
         collections::{HashSet, VecDeque},
         net::TcpListener,
         sync::Arc,
+        time::Duration,
     };
     use tokio::sync::Mutex;
 
@@ -1291,6 +1346,13 @@ mod tests {
         match result {
             IntrospectResult::Authenticated(result) => {
                 assert!(result.authentication_succeeded);
+                assert_eq!(
+                    result
+                        .capabilities
+                        .as_ref()
+                        .and_then(|caps| caps.trust_probe.as_deref()),
+                    Some("v1")
+                );
                 assert_eq!(result.api_origin, "https://api.example.com");
                 assert_eq!(result.event_api_origin, "https://events.example.com");
                 assert_eq!(result.env, Some("branch".to_string()));
@@ -1325,6 +1387,13 @@ mod tests {
         match result {
             IntrospectResult::Unauthenticated(result) => {
                 assert_eq!(result.authentication_succeeded, Some(false));
+                assert_eq!(
+                    result
+                        .capabilities
+                        .as_ref()
+                        .and_then(|caps| caps.trust_probe.as_deref()),
+                    Some("v1")
+                );
                 assert_eq!(result.mode, Kind::Dev);
             }
             IntrospectResult::Authenticated(_) => {
@@ -1538,8 +1607,316 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn root_run_steps_plan_when_immediate_execution_is_disabled() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let step_invocations = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let step_invocations_capture = Arc::clone(&step_invocations);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("plan-root"),
+            Trigger::event("test/first"),
+            move |_input: Input<FirstEvent>, step| {
+                let step_invocations_capture = Arc::clone(&step_invocations_capture);
+                async move {
+                    let _value: Value = step
+                        .run("hello", || {
+                            let step_invocations_capture = Arc::clone(&step_invocations_capture);
+                            async move {
+                                step_invocations_capture
+                                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                                Ok::<_, StepTestError>(json!({ "ok": true }))
+                            }
+                        })
+                        .await?;
+                    Ok(json!({ "unexpected": true }))
+                }
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let body = event_body_with_ctx(
+            "test/first",
+            json!({ "message": "hello" }),
+            json!({
+                "attempt": 1,
+                "disable_immediate_execution": true,
+                "env": "test",
+                "run_id": "run-1",
+                "use_api": false,
+                "stack": { "current": 0, "stack": [] }
+            }),
+        );
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &run_query(fn_id),
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("root discovery should plan the step");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(response.body[0]["op"], "StepPlanned");
+        assert_eq!(response.body[0]["id"], hash_step_id("hello"));
+        assert_eq!(
+            step_invocations.load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn targeted_run_steps_execute_even_when_immediate_execution_is_disabled() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("targeted-planned"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, step| async move {
+                let value: Value = step
+                    .run("hello", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": true }))
+                    })
+                    .await?;
+                Ok(value)
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let targeted_step_id = hash_step_id("hello");
+        let body = event_body_with_ctx(
+            "test/first",
+            json!({ "message": "hello" }),
+            json!({
+                "attempt": 1,
+                "disable_immediate_execution": true,
+                "env": "test",
+                "run_id": "run-1",
+                "use_api": false,
+                "stack": { "current": 0, "stack": [] }
+            }),
+        );
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &RunQueryParams {
+                    fn_id,
+                    step_id: targeted_step_id.clone(),
+                },
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("targeted executions should still run planned steps");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(response.body[0]["op"], "StepRun");
+        assert_eq!(response.body[0]["id"], targeted_step_id);
+    }
+
+    #[tokio::test]
+    async fn parallel_groups_report_multiple_planned_steps_in_one_response() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("parallel-planning"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, step| async move {
+                let (_first, _second) = crate::group::parallel!(step =>
+                    step.run("first", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "first" }))
+                    }).await?,
+                    step.run("second", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "second" }))
+                    }).await?,
+                )
+                .await?;
+                Ok(json!({ "unexpected": true }))
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let body = event_body("test/first", json!({ "message": "hello" }));
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &run_query(fn_id),
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("parallel discovery should return multiple steps");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(response.body.as_array().unwrap().len(), 2);
+        assert_eq!(response.body[0]["op"], "StepPlanned");
+        assert_eq!(response.body[0]["id"], hash_step_id("first"));
+        assert_eq!(response.body[1]["op"], "StepPlanned");
+        assert_eq!(response.body[1]["id"], hash_step_id("second"));
+    }
+
+    #[tokio::test]
+    async fn parallel_groups_execute_the_targeted_branch_after_planning() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("parallel-targeted"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, step| async move {
+                let (_first, _second) = crate::group::parallel!(step =>
+                    step.run("first", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "first" }))
+                    }).await?,
+                    step.run("second", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "second" }))
+                    }).await?,
+                )
+                .await?;
+                Ok(json!({ "unexpected": true }))
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let targeted_step_id = hash_step_id("second");
+        let first_step_id = hash_step_id("first");
+        let body = event_body_with_ctx(
+            "test/first",
+            json!({ "message": "hello" }),
+            json!({
+                "attempt": 1,
+                "disable_immediate_execution": true,
+                "env": "test",
+                "run_id": "run-1",
+                "use_api": false,
+                "stack": { "current": 0, "stack": [first_step_id] }
+            }),
+        );
+        let mut body = body;
+        body["steps"] = json!({
+            hash_step_id("first"): { "data": { "ok": "first" } }
+        });
+
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &RunQueryParams {
+                    fn_id,
+                    step_id: targeted_step_id.clone(),
+                },
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("targeted requests should search parallel branches");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(response.body[0]["op"], "StepRun");
+        assert_eq!(response.body[0]["id"], targeted_step_id);
+    }
+
+    #[tokio::test]
+    async fn parallel_groups_return_step_not_found_after_searching_all_branches() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("parallel-missing"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, step| async move {
+                let (_first, _second) = crate::group::parallel!(step =>
+                    step.run("first", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "first" }))
+                    }).await?,
+                    step.run("second", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "second" }))
+                    }).await?,
+                )
+                .await?;
+                Ok(json!({ "unexpected": true }))
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let missing_step_id = hash_step_id("other");
+        let body = event_body_with_ctx(
+            "test/first",
+            json!({ "message": "hello" }),
+            json!({
+                "attempt": 1,
+                "disable_immediate_execution": true,
+                "env": "test",
+                "run_id": "run-1",
+                "use_api": false,
+                "stack": { "current": 0, "stack": [] }
+            }),
+        );
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &RunQueryParams {
+                    fn_id,
+                    step_id: missing_step_id.clone(),
+                },
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("missing targeted steps should report step-not-found after the group search");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(
+            response.body,
+            json!([{ "id": missing_step_id, "op": "StepNotFound" }])
+        );
+    }
+
+    #[tokio::test]
+    async fn parallel_groups_can_mix_planned_and_async_ops() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("parallel-mixed"),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, step| async move {
+                let (_planned, _sleep) = crate::group::parallel!(step =>
+                    step.run("first", || async move {
+                        Ok::<_, StepTestError>(json!({ "ok": "first" }))
+                    }).await?,
+                    {
+                        step.sleep("pause", Duration::from_secs(5))?;
+                    },
+                )
+                .await?;
+                Ok(json!({ "unexpected": true }))
+            },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let body = event_body("test/first", json!({ "message": "hello" }));
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &run_query(fn_id),
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("mixed parallel discovery should surface both ops");
+
+        assert_eq!(response.status, 206);
+        assert_eq!(response.body.as_array().unwrap().len(), 2);
+        assert_eq!(response.body[0]["op"], "StepPlanned");
+        assert_eq!(response.body[1]["op"], "Sleep");
+    }
+
+    #[tokio::test]
     async fn use_api_requests_fetch_events_and_steps_with_auth_headers() {
-        let (origin, records) = spawn_run_api_server().await;
+        let (origin, records) = spawn_run_api_server(vec![], vec![]).await;
         let client = Inngest::new("test-app").dev(&origin).env("branch");
         let mut handler = Handler::new(&client).signing_key(PRIMARY_SIGNING_KEY);
 
@@ -1564,7 +1941,14 @@ mod tests {
         handler.register_fn(func);
 
         let body = json!({
-            "ctx": { "attempt": 1, "env": "test", "run_id": "run-1" },
+            "ctx": {
+                "attempt": 1,
+                "disable_immediate_execution": false,
+                "env": "test",
+                "run_id": "run-1",
+                "use_api": true,
+                "stack": { "current": 0, "stack": [] }
+            },
             "event": {
                 "id": null,
                 "name": "test/first",
@@ -1573,7 +1957,6 @@ mod tests {
                 "v": null
             },
             "events": [],
-            "use_api": true,
             "steps": {}
         });
         let response = handler
@@ -1618,9 +2001,156 @@ mod tests {
         assert_eq!(records[1].env, Some("branch".to_string()));
     }
 
+    #[tokio::test]
+    async fn use_api_requests_retry_with_fallback_signing_key() {
+        let (origin, records) = spawn_run_api_server(
+            vec![
+                (
+                    StatusCode::UNAUTHORIZED,
+                    "{\"error\":\"unauthorized\"}".to_string(),
+                ),
+                (StatusCode::OK, default_batch_body()),
+            ],
+            vec![
+                (
+                    StatusCode::UNAUTHORIZED,
+                    "{\"error\":\"unauthorized\"}".to_string(),
+                ),
+                (StatusCode::OK, default_actions_body()),
+            ],
+        )
+        .await;
+        let client = Inngest::new("test-app").dev(&origin).env("branch");
+        let mut handler = Handler::new(&client)
+            .signing_key(PRIMARY_SIGNING_KEY)
+            .signing_key_fallback(FALLBACK_SIGNING_KEY);
+
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("hydrate-fallback"),
+            Trigger::event("test/first"),
+            |input: Input<FirstEvent>, _step| async move { Ok(json!(input.event.data.message)) },
+        );
+        let fn_id = func.slug();
+        handler.register_fn(func);
+
+        let body = use_api_body();
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &run_query(fn_id),
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("use_api payloads should retry with the fallback signing key");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, json!("from-api"));
+
+        let records = records.lock().await;
+        assert_eq!(records.len(), 4);
+        assert_eq!(
+            records[0].authorization,
+            Some(format!(
+                "Bearer {}",
+                Signature::new(PRIMARY_SIGNING_KEY)
+                    .hash()
+                    .expect("primary signing key should hash"),
+            ))
+        );
+        assert_eq!(
+            records[1].authorization,
+            Some(format!(
+                "Bearer {}",
+                Signature::new(FALLBACK_SIGNING_KEY)
+                    .hash()
+                    .expect("fallback signing key should hash"),
+            ))
+        );
+        assert_eq!(records[0].path, "/v0/runs/run-1/batch");
+        assert_eq!(records[1].path, "/v0/runs/run-1/batch");
+        assert_eq!(records[2].path, "/v0/runs/run-1/actions");
+        assert_eq!(records[3].path, "/v0/runs/run-1/actions");
+    }
+
+    #[tokio::test]
+    async fn use_api_requests_fail_when_batch_fetch_fails() {
+        let (origin, _records) = spawn_run_api_server(
+            vec![(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "{\"error\":\"boom\"}".to_string(),
+            )],
+            vec![],
+        )
+        .await;
+        let client = Inngest::new("test-app").dev(&origin);
+        let (handler, fn_id) = registered_handler(client, Some(PRIMARY_SIGNING_KEY), None);
+        let body = use_api_body();
+
+        let error = match handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &run_query(fn_id),
+                &body.to_string(),
+                &body,
+            )
+            .await
+        {
+            Ok(_) => panic!("failing batch hydration should surface an error"),
+            Err(error) => error,
+        };
+
+        assert_basic_error(error, "/v0/runs/run-1/batch: status 500");
+    }
+
+    #[tokio::test]
+    async fn use_api_requests_fail_when_actions_fetch_fails() {
+        let (origin, _records) = spawn_run_api_server(
+            vec![],
+            vec![(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "{\"error\":\"boom\"}".to_string(),
+            )],
+        )
+        .await;
+        let client = Inngest::new("test-app").dev(&origin);
+        let (handler, fn_id) = registered_handler(client, Some(PRIMARY_SIGNING_KEY), None);
+        let body = use_api_body();
+
+        let error = match handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &run_query(fn_id),
+                &body.to_string(),
+                &body,
+            )
+            .await
+        {
+            Ok(_) => panic!("failing action hydration should surface an error"),
+            Err(error) => error,
+        };
+
+        assert_basic_error(error, "/v0/runs/run-1/actions: status 500");
+    }
+
     fn event_body(name: &str, data: Value) -> Value {
+        event_body_with_ctx(
+            name,
+            data,
+            json!({
+                "attempt": 1,
+                "disable_immediate_execution": false,
+                "env": "test",
+                "run_id": "run-1",
+                "use_api": false,
+                "stack": { "current": 0, "stack": [] }
+            }),
+        )
+    }
+
+    fn event_body_with_ctx(name: &str, data: Value, ctx: Value) -> Value {
         json!({
-            "ctx": { "attempt": 1, "env": "test", "run_id": "run-1" },
+            "ctx": ctx,
             "event": {
                 "id": null,
                 "name": name,
@@ -1629,7 +2159,28 @@ mod tests {
                 "v": null
             },
             "events": [],
-            "use_api": false,
+            "steps": {}
+        })
+    }
+
+    fn use_api_body() -> Value {
+        json!({
+            "ctx": {
+                "attempt": 1,
+                "disable_immediate_execution": false,
+                "env": "test",
+                "run_id": "run-1",
+                "use_api": true,
+                "stack": { "current": 0, "stack": [] }
+            },
+            "event": {
+                "id": null,
+                "name": "test/first",
+                "data": { "message": "placeholder" },
+                "ts": null,
+                "v": null
+            },
+            "events": [],
             "steps": {}
         })
     }
@@ -1738,13 +2289,23 @@ mod tests {
         (format!("http://{}", addr), records)
     }
 
-    async fn spawn_run_api_server() -> (String, Arc<Mutex<Vec<SyncRequestRecord>>>) {
+    async fn spawn_run_api_server(
+        batch_responses: Vec<(StatusCode, String)>,
+        action_responses: Vec<(StatusCode, String)>,
+    ) -> (String, Arc<Mutex<Vec<SyncRequestRecord>>>) {
+        #[derive(Clone)]
+        struct RunApiServerState {
+            action_responses: Arc<Mutex<VecDeque<(StatusCode, String)>>>,
+            batch_responses: Arc<Mutex<VecDeque<(StatusCode, String)>>>,
+            records: Arc<Mutex<Vec<SyncRequestRecord>>>,
+        }
+
         async fn fetch_batch(
-            State(records): State<Arc<Mutex<Vec<SyncRequestRecord>>>>,
+            State(state): State<RunApiServerState>,
             headers: HeaderMap,
             uri: Uri,
         ) -> impl IntoResponse {
-            records.lock().await.push(SyncRequestRecord {
+            state.records.lock().await.push(SyncRequestRecord {
                 authorization: header_value(&headers, "authorization"),
                 env: header_value(&headers, header::INNGEST_ENV),
                 path: uri.path().to_string(),
@@ -1753,30 +2314,20 @@ mod tests {
                 sdk: header_value(&headers, header::INNGEST_SDK),
             });
 
-            Json(json!([
-                {
-                    "id": "evt-1",
-                    "name": "test/first",
-                    "data": { "message": "from-api" },
-                    "ts": null,
-                    "v": null
-                },
-                {
-                    "id": "evt-2",
-                    "name": "test/first",
-                    "data": { "message": "from-api-2" },
-                    "ts": null,
-                    "v": null
-                }
-            ]))
+            state
+                .batch_responses
+                .lock()
+                .await
+                .pop_front()
+                .unwrap_or((StatusCode::OK, default_batch_body()))
         }
 
         async fn fetch_actions(
-            State(records): State<Arc<Mutex<Vec<SyncRequestRecord>>>>,
+            State(state): State<RunApiServerState>,
             headers: HeaderMap,
             uri: Uri,
         ) -> impl IntoResponse {
-            records.lock().await.push(SyncRequestRecord {
+            state.records.lock().await.push(SyncRequestRecord {
                 authorization: header_value(&headers, "authorization"),
                 env: header_value(&headers, header::INNGEST_ENV),
                 path: uri.path().to_string(),
@@ -1785,20 +2336,26 @@ mod tests {
                 sdk: header_value(&headers, header::INNGEST_SDK),
             });
 
-            Json(json!({
-                "3ce0995fad5ea2556082d4021be335153233edf9": {
-                    "data": "memoized-from-api"
-                }
-            }))
+            state
+                .action_responses
+                .lock()
+                .await
+                .pop_front()
+                .unwrap_or((StatusCode::OK, default_actions_body()))
         }
 
         let records = Arc::new(Mutex::new(Vec::new()));
+        let state = RunApiServerState {
+            action_responses: Arc::new(Mutex::new(VecDeque::from(action_responses))),
+            batch_responses: Arc::new(Mutex::new(VecDeque::from(batch_responses))),
+            records: Arc::clone(&records),
+        };
         let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
         let addr = listener.local_addr().expect("listener addr should exist");
         let app = Router::new()
             .route("/v0/runs/run-1/batch", get(fetch_batch))
             .route("/v0/runs/run-1/actions", get(fetch_actions))
-            .with_state(Arc::clone(&records));
+            .with_state(state);
 
         tokio::spawn(async move {
             axum::Server::from_tcp(listener)
@@ -1842,5 +2399,34 @@ mod tests {
 
     fn sync_success_body() -> String {
         "{\"ok\":true,\"modified\":true}".to_string()
+    }
+
+    fn default_batch_body() -> String {
+        json!([
+            {
+                "id": "evt-1",
+                "name": "test/first",
+                "data": { "message": "from-api" },
+                "ts": null,
+                "v": null
+            },
+            {
+                "id": "evt-2",
+                "name": "test/first",
+                "data": { "message": "from-api-2" },
+                "ts": null,
+                "v": null
+            }
+        ])
+        .to_string()
+    }
+
+    fn default_actions_body() -> String {
+        json!({
+            "3ce0995fad5ea2556082d4021be335153233edf9": {
+                "data": "memoized-from-api"
+            }
+        })
+        .to_string()
     }
 }

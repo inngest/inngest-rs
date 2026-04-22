@@ -22,6 +22,7 @@ use crate::{
 
 #[derive(Serialize, Clone)]
 enum Opcode {
+    StepPlanned,
     StepRun,
     StepError,
     Sleep,
@@ -63,8 +64,11 @@ mod state {
         indices: HashMap<String, u64>,
         stack: VecDeque<String>,
         recovery_mode: bool,
+        parallel_depth: usize,
         genop: Vec<GeneratorOpCode>,
         missing_step: Option<String>,
+        step_seen: bool,
+        target_found: bool,
     }
 
     impl InnerState {
@@ -92,8 +96,11 @@ mod state {
                     indices: HashMap::new(),
                     stack: VecDeque::from(stack.to_vec()),
                     recovery_mode: false,
+                    parallel_depth: 0,
                     genop: Vec::new(),
                     missing_step: None,
+                    step_seen: false,
+                    target_found: false,
                 })),
             }
         }
@@ -116,6 +123,35 @@ mod state {
 
         pub fn push_missing_step(&self, id: String) {
             self.inner.write().unwrap().missing_step = Some(id);
+        }
+
+        pub fn target_found(&self) -> bool {
+            self.inner.read().unwrap().target_found
+        }
+
+        pub fn step_seen(&self) -> bool {
+            self.inner.read().unwrap().step_seen
+        }
+
+        pub fn mark_target_found(&self) {
+            self.inner.write().unwrap().target_found = true;
+        }
+
+        pub fn mark_step_seen(&self) {
+            self.inner.write().unwrap().step_seen = true;
+        }
+
+        pub fn enter_parallel_scope(&self) {
+            self.inner.write().unwrap().parallel_depth += 1;
+        }
+
+        pub fn exit_parallel_scope(&self) {
+            let mut inner = self.inner.write().unwrap();
+            inner.parallel_depth = inner.parallel_depth.saturating_sub(1);
+        }
+
+        pub fn in_parallel_scope(&self) -> bool {
+            self.inner.read().unwrap().parallel_depth > 0
         }
 
         pub fn take_memoized(&self, key: &str) -> Option<Option<Value>> {
@@ -170,6 +206,17 @@ pub struct Step {
     client: Inngest,
     state: state::State,
     target_step_id: String,
+    disable_immediate_execution: bool,
+}
+
+pub struct ParallelScopeGuard {
+    state: state::State,
+}
+
+impl Drop for ParallelScopeGuard {
+    fn drop(&mut self) {
+        self.state.exit_parallel_scope();
+    }
 }
 
 #[derive(Deserialize)]
@@ -188,16 +235,29 @@ impl<E> UserProvidedError<'_> for E where
 
 impl Step {
     /// Creates a step helper for the current function execution.
+    #[cfg(test)]
     pub(crate) fn new(
         client: Inngest,
         state: &HashMap<String, Option<Value>>,
         target_step_id: &str,
         stack: &[String],
     ) -> Self {
+        Self::new_with_execution_mode(client, state, target_step_id, stack, false)
+    }
+
+    /// Creates a step helper with explicit execution controls from the call request.
+    pub(crate) fn new_with_execution_mode(
+        client: Inngest,
+        state: &HashMap<String, Option<Value>>,
+        target_step_id: &str,
+        stack: &[String],
+        disable_immediate_execution: bool,
+    ) -> Self {
         Step {
             client,
             state: State::new(state, stack),
             target_step_id: target_step_id.to_string(),
+            disable_immediate_execution,
         }
     }
 
@@ -213,6 +273,14 @@ impl Step {
         self.state.missing_step()
     }
 
+    pub(crate) fn target_found(&self) -> bool {
+        self.state.target_found()
+    }
+
+    pub(crate) fn step_seen(&self) -> bool {
+        self.state.step_seen()
+    }
+
     fn push_op(&self, op: GeneratorOpCode) {
         self.state.push_op(op);
     }
@@ -221,8 +289,50 @@ impl Step {
         self.state.push_missing_step(id);
     }
 
+    fn mark_target_found(&self) {
+        self.state.mark_target_found();
+    }
+
+    fn mark_step_seen(&self) {
+        self.state.mark_step_seen();
+    }
+
     fn take_memoized(&self, key: &str) -> Option<Option<Value>> {
         self.state.take_memoized(key)
+    }
+
+    fn in_parallel_scope(&self) -> bool {
+        self.state.in_parallel_scope()
+    }
+
+    #[doc(hidden)]
+    pub fn __enter_parallel_scope(&self) -> ParallelScopeGuard {
+        self.state.enter_parallel_scope();
+        ParallelScopeGuard {
+            state: self.state.clone(),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn __is_targeted_request(&self) -> bool {
+        self.target_step_id != "step"
+    }
+
+    #[doc(hidden)]
+    pub fn __mark_missing_target(&self) {
+        self.push_missing_step(self.target_step_id.clone());
+    }
+
+    fn reject_unrelated_target(&self, hashed: &str) -> Result<(), Error> {
+        if self.target_step_id != "step" && self.target_step_id != hashed {
+            if self.in_parallel_scope() {
+                return Err(Error::Interrupt(FlowControlError::parallel_skip()));
+            }
+            self.push_missing_step(self.target_step_id.clone());
+            return Err(Error::Interrupt(FlowControlError::step_generator()));
+        }
+
+        Ok(())
     }
 
     pub async fn run<T, E, F>(&self, id: &str, f: impl FnOnce() -> F) -> Result<T, Error>
@@ -233,6 +343,11 @@ impl Step {
     {
         let op = self.new_op(id);
         let hashed = op.hash();
+        self.mark_step_seen();
+
+        if self.target_step_id == hashed {
+            self.mark_target_found();
+        }
 
         if let Some(stored_value) = self.take_memoized(&hashed) {
             return match parse_memoized_step_result(stored_value, "run step")? {
@@ -241,8 +356,20 @@ impl Step {
             };
         }
 
-        if self.target_step_id != "step" && self.target_step_id != hashed {
-            self.push_missing_step(self.target_step_id.clone());
+        self.reject_unrelated_target(&hashed)?;
+
+        if self.target_step_id == "step"
+            && (self.disable_immediate_execution || self.in_parallel_scope())
+        {
+            self.push_op(GeneratorOpCode {
+                op: Opcode::StepPlanned,
+                id: hashed,
+                name: id.to_string(),
+                display_name: id.to_string(),
+                data: None,
+                error: None,
+                opts: json!({}),
+            });
             return Err(Error::Interrupt(FlowControlError::step_generator()));
         }
 
@@ -288,6 +415,11 @@ impl Step {
     pub fn sleep(&self, id: &str, dur: Duration) -> Result<(), Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
+        self.mark_step_seen();
+
+        if self.target_step_id == hashed {
+            self.mark_target_found();
+        }
 
         match self.take_memoized(&hashed) {
             // if state already exists, it means we already slept
@@ -295,6 +427,7 @@ impl Step {
 
             // TODO: if no state exists, we need to signal to sleep
             None => {
+                self.reject_unrelated_target(&hashed)?;
                 let opts = json!({
                     "duration": duration::to_string(dur)
                 });
@@ -318,11 +451,17 @@ impl Step {
     pub fn sleep_until(&self, id: &str, unix_ts_ms: i64) -> Result<(), Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
+        self.mark_step_seen();
+
+        if self.target_step_id == hashed {
+            self.mark_target_found();
+        }
 
         match self.take_memoized(&hashed) {
             Some(_) => Ok(()),
 
             None => {
+                self.reject_unrelated_target(&hashed)?;
                 let systime = self.unix_ts_to_systime(unix_ts_ms);
                 let dur = match systime.duration_since(SystemTime::now()) {
                     Ok(dur) => dur,
@@ -358,6 +497,11 @@ impl Step {
     ) -> Result<Option<Event<T>>, Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
+        self.mark_step_seen();
+
+        if self.target_step_id == hashed {
+            self.mark_target_found();
+        }
 
         match self.take_memoized(&hashed) {
             Some(evt) => {
@@ -376,6 +520,7 @@ impl Step {
             }
 
             None => {
+                self.reject_unrelated_target(&hashed)?;
                 let mut wait_opts = json!({
                     "event": &opts.event,
                     "timeout": duration::to_string(opts.timeout),
@@ -407,6 +552,11 @@ impl Step {
     ) -> Result<T, Error> {
         let op = self.new_op(id);
         let hashed = op.hash();
+        self.mark_step_seen();
+
+        if self.target_step_id == hashed {
+            self.mark_target_found();
+        }
 
         match self.take_memoized(&hashed) {
             Some(resp) => match parse_memoized_step_result(resp, "invoke step")? {
@@ -415,6 +565,7 @@ impl Step {
             },
 
             None => {
+                self.reject_unrelated_target(&hashed)?;
                 let mut invoke_opts = json!({
                     "function_id": &opts.function_id,
                     "payload": {

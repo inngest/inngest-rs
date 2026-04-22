@@ -52,5 +52,5 @@
 - [X] Tests cover hashing, memoization, targeted lookup, stack-order recovery, and key e2e replay invariants
 
 * Out of Scope
-- Step planning
-- Parallel execution
+- Step planning, covered by `003`
+- Parallel execution, covered by `003` and `005`

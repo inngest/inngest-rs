@@ -42,7 +42,7 @@
 - [X] Introspection accurately reports auth-related state without leaking non-spec top-level fields
 
 * Out of Scope
-- Full call-request execution semantics
-- Middleware
-- Connect
-- Dev-mode warning behavior for unexpected `X-Inngest-Server-Kind` values
+- Full call-request execution semantics, covered by `003`
+- Middleware, covered by `006`
+- Connect, covered by `007`
+- Dev-mode warning behavior for unexpected `X-Inngest-Server-Kind` values, covered by `007`

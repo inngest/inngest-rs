@@ -1,16 +1,16 @@
-#+TITLE: Middleware and Introspection Completeness
+#+TITLE: Middleware Surface
 #+AUTHOR: Darwin D. Wu
-#+DATE: 2026-04-16
+#+DATE: 2026-04-20
 #+STATUS: Draft
 
 * Goal
-- Add middleware hooks and finish the introspection surface so the SDK reports its capabilities accurately.
+- Add an idiomatic Rust middleware surface with the required lifecycle ordering and mutation points.
 
 * Scope
 - Client middleware
 - Function middleware
 - Event send lifecycle hooks
-- Introspection capability reporting
+- Remaining introspection capability reporting for advanced execution features
 
 * Checklist
 - [ ] Define an idiomatic Rust middleware API for client-level middleware
@@ -24,16 +24,14 @@
 - [ ] Add before-response hooks where supported
 - [ ] Add event-send lifecycle hooks
 - [ ] Allow middleware to mutate context, memoized step data, output, errors, and outbound events
-- [ ] Populate introspection `capabilities`
-- [ ] Report supported capability versions for any shipped advanced features
 - [ ] Add tests for middleware ordering and mutation points
-- [ ] Add tests for authenticated and unauthenticated introspection responses
+- [ ] Extend probe/introspection capability reporting when advanced parallel execution features ship
 
 * Exit Criteria
 - [ ] Middleware exists with the required lifecycle guarantees
-- [ ] Introspection accurately reflects the SDK’s supported capabilities and environment state
-- [ ] Middleware and introspection behavior are test-covered
+- [ ] Middleware behavior is test-covered
+- [ ] Capability reporting is updated to reflect any newly shipped advanced execution features
 
 * Out of Scope
-- Connect implementation details
-- Checkpoint transport
+- Connect implementation details, covered by `007`
+- Checkpoint transport, covered by `007`

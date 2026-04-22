@@ -1,0 +1,36 @@
+#+TITLE: Advanced Runtime Modes
+#+AUTHOR: Darwin D. Wu
+#+DATE: 2026-04-20
+#+STATUS: Draft
+
+* Goal
+- Cover the advanced runtime and transport features deferred from the core HTTP and execution milestones.
+
+* Scope
+- Connect support
+- Streaming execution/transport behavior
+- Checkpoint transport and recovery wiring
+- Remaining dev-mode and runtime warning behavior
+- Capability reporting for these advanced runtime modes where applicable
+
+* Checklist
+- [ ] Define the Rust-facing surface and sync/introspection implications for Connect support
+- [ ] Implement Connect capability reporting and any required serve/runtime wiring
+- [ ] Define the SDK behavior for streaming execution responses and transport constraints
+- [ ] Implement streaming support or explicitly document why it remains unsupported
+- [ ] Define the checkpoint transport shape needed by the spec-facing executor path
+- [ ] Implement checkpoint transport and resume wiring where supported
+- [ ] Add developer-facing warning behavior for unexpected dev-mode `X-Inngest-Server-Kind` values
+- [ ] Add tests for Connect capability reporting and runtime behavior
+- [ ] Add tests for streaming behavior or unsupported-mode handling
+- [ ] Add tests for checkpoint transport and resume behavior
+
+* Exit Criteria
+- [ ] Deferred advanced runtime modes from earlier plans are explicitly implemented or documented
+- [ ] Connect, streaming, and checkpointing behavior are no longer unowned roadmap items
+- [ ] Runtime warnings and capability reporting reflect the shipped advanced mode surface
+
+* Out of Scope
+- Middleware lifecycle hooks, covered by `006`
+- Expanded function metadata, covered by `004`
+- Remaining step-type surface gaps, covered by `005`
