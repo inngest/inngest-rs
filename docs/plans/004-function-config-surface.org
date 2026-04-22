@@ -1,7 +1,7 @@
 #+TITLE: Function Config Surface
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-16
-#+STATUS: Completed
+#+STATUS: Done
 
 * Goal
 - Expand the function definition API and sync serialization to cover the spec-defined function metadata.
