@@ -25,6 +25,8 @@ type DynamicFn = dyn Fn(RunQueryParams, Value) -> BoxFuture<'static, Result<SdkR
     + Send
     + Sync
     + 'static;
+type RegisteredFunc<T, E> =
+    dyn Fn(Input<T>, StepTool) -> BoxFuture<'static, Result<Value, E>> + Send + Sync + 'static;
 
 struct DynamicServableFn {
     app_id: String,
@@ -92,99 +94,97 @@ impl DynamicServableFn {
 ///
 /// Convert a [`ServableFn`] into a `RegisteredFn` with `.into()` when batching
 /// functions that use different event payload or error types.
-pub struct RegisteredFn(DynamicServableFn);
+pub struct RegisteredFn(Vec<DynamicServableFn>);
 
 impl RegisteredFn {
-    fn into_dynamic(self) -> DynamicServableFn {
+    fn into_dynamics(self) -> Vec<DynamicServableFn> {
         self.0
     }
 }
 
-impl<T, E> From<ServableFn<T, E>> for DynamicServableFn
+fn make_dynamic_fn<T, E>(
+    app_id: String,
+    client: Inngest,
+    opts: FunctionOpts,
+    trigger: Trigger,
+    func: Box<RegisteredFunc<T, E>>,
+) -> DynamicServableFn
 where
     T: InngestEvent + Send,
     E: Into<Error> + 'static,
 {
-    fn from(func: ServableFn<T, E>) -> Self {
-        let ServableFn {
-            app_id,
-            client,
-            opts,
-            trigger,
-            func,
-        } = func;
-        let func = Arc::new(func);
+    let func = Arc::new(func);
 
-        Self {
-            app_id,
-            opts,
-            trigger,
-            func: Box::new(move |query, body| {
-                let step_func = Arc::clone(&func);
-                let client = client.clone();
+    DynamicServableFn {
+        app_id,
+        opts,
+        trigger,
+        func: Box::new(move |query, body| {
+            let step_func = Arc::clone(&func);
+            let client = client.clone();
 
-                async move {
-                    let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
-                        Ok(res) => res,
-                        Err(err) => {
-                            println!("ERROR: {:?}", err);
-                            println!("BODY: {:#?}", &body);
-                            let msg = basic_error!("error parsing run request: {}", err);
-                            return Err(msg);
-                        }
-                    };
+            async move {
+                let data = match serde_json::from_value::<RunRequestBody<T>>(body.clone()) {
+                    Ok(res) => res,
+                    Err(err) => {
+                        println!("ERROR: {:?}", err);
+                        println!("BODY: {:#?}", &body);
+                        let msg = basic_error!("error parsing run request: {}", err);
+                        return Err(msg);
+                    }
+                };
 
-                    let input = Input {
-                        event: data.event,
-                        events: data.events,
-                        ctx: InputCtx {
-                            env: data.ctx.env.clone(),
-                            fn_id: query.fn_id.clone(),
-                            run_id: data.ctx.run_id.clone(),
-                            step_id: query.step_id.clone(),
-                            attempt: data.ctx.attempt,
-                        },
-                    };
+                let input = Input {
+                    event: data.event,
+                    events: data.events,
+                    ctx: InputCtx {
+                        env: data.ctx.env.clone(),
+                        fn_id: query.fn_id.clone(),
+                        run_id: data.ctx.run_id.clone(),
+                        step_id: query.step_id.clone(),
+                        attempt: data.ctx.attempt,
+                    },
+                };
 
-                    let step_tool = StepTool::new_with_execution_mode(
-                        client.clone(),
-                        &data.steps,
-                        &query.step_id,
-                        &data.ctx.stack.stack,
-                        data.ctx.disable_immediate_execution,
-                    );
+                let step_tool = StepTool::new_with_execution_mode(
+                    client.clone(),
+                    &data.steps,
+                    &query.step_id,
+                    &data.ctx.stack.stack,
+                    data.ctx.disable_immediate_execution,
+                );
 
-                    match std::panic::catch_unwind(AssertUnwindSafe(|| {
-                        (step_func.as_ref())(input, step_tool.clone())
-                    })) {
-                        Ok(fut) => match AssertUnwindSafe(fut).catch_unwind().await {
-                            Ok(v) => match v {
-                                Ok(v) => {
-                                    if query.step_id != default_step_id()
-                                        && step_tool.step_seen()
-                                        && !step_tool.target_found()
-                                    {
-                                        return Ok(SdkResponse {
-                                            status: 206,
-                                            body: json!([{
-                                                "id": query.step_id,
-                                                "op": "StepNotFound"
-                                            }]),
-                                        });
-                                    }
-
-                                    Ok(SdkResponse {
-                                        status: 200,
-                                        body: v,
-                                    })
+                match std::panic::catch_unwind(AssertUnwindSafe(|| {
+                    (step_func.as_ref())(input, step_tool.clone())
+                })) {
+                    Ok(fut) => match AssertUnwindSafe(fut).catch_unwind().await {
+                        Ok(v) => match v {
+                            Ok(v) => {
+                                if query.step_id != default_step_id()
+                                    && step_tool.step_seen()
+                                    && !step_tool.target_found()
+                                {
+                                    return Ok(SdkResponse {
+                                        status: 206,
+                                        body: json!([{
+                                            "id": query.step_id,
+                                            "op": "StepNotFound"
+                                        }]),
+                                    });
                                 }
-                                Err(err) => match err.into() {
-                                    Error::Interrupt(mut flow) => {
-                                        flow.acknowledge();
-                                        match flow.variant {
-                                            FlowControlVariant::StepGenerator => {
-                                                let (status, body) = if let Some(step_id) = step_tool.missing_step()
-                                                {
+
+                                Ok(SdkResponse {
+                                    status: 200,
+                                    body: v,
+                                })
+                            }
+                            Err(err) => match err.into() {
+                                Error::Interrupt(mut flow) => {
+                                    flow.acknowledge();
+                                    match flow.variant {
+                                        FlowControlVariant::StepGenerator => {
+                                            let (status, body) =
+                                                if let Some(step_id) = step_tool.missing_step() {
                                                     (
                                                         206,
                                                         json!([{
@@ -197,40 +197,37 @@ where
                                                         Ok(v) => (206, v),
                                                         Err(err) => {
                                                             return Err(basic_error!(
-                                                                "error serializing step response: {}",
-                                                                err
-                                                            ));
+                                                            "error serializing step response: {}",
+                                                            err
+                                                        ));
                                                         }
                                                     }
                                                 } else {
                                                     (206, json!("null"))
                                                 };
-                                                Ok(SdkResponse { status, body })
-                                            }
-                                            FlowControlVariant::ParallelSkip => {
-                                                Err(basic_error!(
-                                                    "parallel skip leaked out of a parallel group"
-                                                ))
-                                            }
+                                            Ok(SdkResponse { status, body })
                                         }
+                                        FlowControlVariant::ParallelSkip => Err(basic_error!(
+                                            "parallel skip leaked out of a parallel group"
+                                        )),
                                     }
-                                    other => Err(other),
-                                },
+                                }
+                                other => Err(other),
                             },
-                            Err(panic_err) => Ok(SdkResponse {
-                                status: 500,
-                                body: Value::String(format!("panic: {:?}", panic_err)),
-                            }),
                         },
                         Err(panic_err) => Ok(SdkResponse {
                             status: 500,
                             body: Value::String(format!("panic: {:?}", panic_err)),
                         }),
-                    }
+                    },
+                    Err(panic_err) => Ok(SdkResponse {
+                        status: 500,
+                        body: Value::String(format!("panic: {:?}", panic_err)),
+                    }),
                 }
-                .boxed()
-            }),
-        }
+            }
+            .boxed()
+        }),
     }
 }
 
@@ -240,7 +237,42 @@ where
     E: Into<Error> + 'static,
 {
     fn from(func: ServableFn<T, E>) -> Self {
-        Self(DynamicServableFn::from(func))
+        let ServableFn {
+            app_id,
+            client,
+            opts,
+            trigger,
+            func,
+            on_failure,
+        } = func;
+
+        let function_id = format!("{}-{}", app_id, slugify(opts.id.clone()));
+        let function_name = opts.name.clone().unwrap_or_else(|| function_id.clone());
+
+        let mut funcs = vec![make_dynamic_fn(
+            app_id.clone(),
+            client.clone(),
+            opts.clone(),
+            trigger,
+            func,
+        )];
+
+        if let Some(on_failure) = on_failure {
+            let failure_opts = FunctionOpts::new(&format!("{}-failure", opts.id))
+                .name(&format!("{} (failure)", function_name))
+                .retries(0);
+
+            funcs.push(make_dynamic_fn(
+                app_id,
+                client,
+                failure_opts,
+                Trigger::event("inngest/function.failed")
+                    .expr(&format!("event.data.function_id == \"{}\"", function_id)),
+                on_failure,
+            ));
+        }
+
+        Self(funcs)
     }
 }
 
@@ -331,8 +363,10 @@ impl Handler {
         T: InngestEvent + Send,
         E: Into<Error> + 'static,
     {
-        let func = DynamicServableFn::from(func);
-        self.funcs.insert(func.slug(), func);
+        let funcs = RegisteredFn::from(func).into_dynamics();
+        for func in funcs {
+            self.funcs.insert(func.slug(), func);
+        }
     }
 
     /// Registers multiple functions with the handler.
@@ -351,8 +385,9 @@ impl Handler {
         I: IntoIterator<Item = RegisteredFn>,
     {
         for f in funcs {
-            let func = f.into_dynamic();
-            self.funcs.insert(func.slug(), func);
+            for func in f.into_dynamics() {
+                self.funcs.insert(func.slug(), func);
+            }
         }
     }
 
@@ -929,8 +964,9 @@ mod tests {
     use super::*;
     use crate::function::{
         FunctionBatchEvents, FunctionCancel, FunctionConcurrency, FunctionConcurrencyOption,
-        FunctionConcurrencyScope, FunctionDebounce, FunctionPriority, FunctionRateLimit,
-        FunctionSingleton, FunctionSingletonMode, FunctionThrottle, FunctionTimeouts, ServableFn,
+        FunctionConcurrencyScope, FunctionDebounce, FunctionFailureEvent, FunctionPriority,
+        FunctionRateLimit, FunctionSingleton, FunctionSingletonMode, FunctionThrottle,
+        FunctionTimeouts, ServableFn,
     };
     use axum::{
         extract::State,
@@ -1417,6 +1453,58 @@ mod tests {
     }
 
     #[test]
+    fn sync_payload_includes_internal_failure_handler_function() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let func: ServableFn<FirstEvent, Error> = client
+            .create_function(
+                FunctionOpts::new("first"),
+                Trigger::event("test/first"),
+                |_input: Input<FirstEvent>, _step| async move { Ok(json!({ "ok": true })) },
+            )
+            .on_failure(
+                |input: Input<FunctionFailureEvent<FirstEvent>>, _step| async move {
+                    Ok(json!({
+                        "failed": input.event.data.function_id,
+                    }))
+                },
+            );
+
+        handler.register_fn(func);
+
+        let payload = handler
+            .sync_payload(&Headers::from(HeaderMap::new()), "axum")
+            .expect("sync payload should serialize");
+        let functions = payload.functions;
+        let function_ids: HashSet<String> = functions
+            .iter()
+            .map(|function| function.id.clone())
+            .collect();
+
+        assert_eq!(function_ids.len(), 2);
+        assert!(function_ids.contains("test-app-first"));
+        assert!(function_ids.contains("test-app-first-failure"));
+
+        let failure_function = functions
+            .into_iter()
+            .find(|function| function.id == "test-app-first-failure")
+            .expect("failure function should be present");
+
+        assert_eq!(failure_function.name, "test-app-first (failure)");
+        assert_eq!(
+            failure_function.triggers,
+            vec![Trigger::EventTrigger {
+                event: "inngest/function.failed".to_string(),
+                expression: Some("event.data.function_id == \"test-app-first\"".to_string()),
+            }]
+        );
+        assert_eq!(failure_function.steps["step"].retries.attempts, 0);
+        assert!(failure_function.concurrency.is_none());
+        assert!(failure_function.singleton.is_none());
+    }
+
+    #[test]
     fn sync_payload_rejects_batch_configs_outside_spec_limits() {
         let client = Inngest::new("test-app");
         let mut handler = Handler::new(&client);
@@ -1480,6 +1568,82 @@ mod tests {
             .expect_err("invalid concurrency config should be rejected");
 
         assert_basic_error(error, "concurrency supports at most two keyed options");
+    }
+
+    #[tokio::test]
+    async fn handler_runs_internal_failure_handler_functions() {
+        let client = Inngest::new("test-app").dev("1");
+        let mut handler = Handler::new(&client);
+
+        let func: ServableFn<FirstEvent, Error> = client
+            .create_function(
+                FunctionOpts::new("first"),
+                Trigger::event("test/first"),
+                |_input: Input<FirstEvent>, _step| async move { Ok(json!({ "ok": true })) },
+            )
+            .on_failure(
+                |input: Input<FunctionFailureEvent<FirstEvent>>, _step| async move {
+                    Ok(json!({
+                        "message": input.event.data.error.message,
+                        "original": input.event.data.event.data.message,
+                        "failed_function_id": input.event.data.function_id,
+                        "failed_run_id": input.event.data.run_id,
+                    }))
+                },
+            );
+
+        handler.register_fn(func);
+
+        let payload = handler
+            .sync_payload(&Headers::from(HeaderMap::new()), "axum")
+            .expect("sync payload should serialize");
+        let failure_fn_id = payload
+            .functions
+            .into_iter()
+            .find(|function| function.id == "test-app-first-failure")
+            .expect("failure function should be present")
+            .id;
+
+        let body = event_body(
+            "inngest/function.failed",
+            json!({
+                "error": {
+                    "error": "boom",
+                    "message": "boom",
+                    "name": "Error"
+                },
+                "event": {
+                    "id": "evt-1",
+                    "name": "test/first",
+                    "data": { "message": "hello" },
+                    "ts": 123,
+                    "v": null
+                },
+                "function_id": "test-app-first",
+                "run_id": "failed-run-1"
+            }),
+        );
+
+        let response = handler
+            .run(
+                &Headers::from(HeaderMap::new()),
+                &run_query(failure_fn_id),
+                &body.to_string(),
+                &body,
+            )
+            .await
+            .expect("failure handler should run");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            response.body,
+            json!({
+                "message": "boom",
+                "original": "hello",
+                "failed_function_id": "test-app-first",
+                "failed_run_id": "failed-run-1"
+            })
+        );
     }
 
     #[tokio::test]

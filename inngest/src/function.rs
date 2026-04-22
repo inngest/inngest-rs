@@ -4,7 +4,7 @@ use crate::{
     step_tool::Step as StepTool,
     utils::duration,
 };
-use futures::future::BoxFuture;
+use futures::{future::BoxFuture, FutureExt};
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use slug::slugify;
@@ -25,6 +25,30 @@ pub struct InputCtx {
     pub run_id: String,
     pub step_id: String,
     pub attempt: u8,
+}
+
+/// Error information attached to an `inngest/function.failed` event.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionFailureError {
+    #[serde(default, rename = "__serialized")]
+    pub serialized: bool,
+    #[serde(default)]
+    pub error: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stack: Option<String>,
+}
+
+/// The payload carried by the `inngest/function.failed` system event.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FunctionFailureEvent<T: 'static> {
+    pub error: FunctionFailureError,
+    pub event: Event<T>,
+    pub function_id: String,
+    pub run_id: String,
 }
 
 /// A function-config time value accepted by the sync payload.
@@ -533,6 +557,7 @@ pub struct ServableFn<T: 'static, E> {
     pub opts: FunctionOpts,
     pub trigger: Trigger,
     pub func: Box<Func<T, E>>,
+    pub(crate) on_failure: Option<Box<Func<FunctionFailureEvent<T>, E>>>,
 }
 
 impl<T: InngestEvent, E> Debug for ServableFn<T, E> {
@@ -559,6 +584,20 @@ impl<T, E> ServableFn<T, E> {
 
     pub fn trigger(&self) -> Trigger {
         self.trigger.clone()
+    }
+
+    /// Registers a Rust-style `on_failure` handler for this function.
+    ///
+    /// The handler is synced as a separate internal function triggered by the
+    /// `inngest/function.failed` system event. The internal function uses its
+    /// own retry policy and does not inherit concurrency or singleton settings
+    /// from the parent function.
+    pub fn on_failure<F: futures::Future<Output = Result<Value, E>> + Send + Sync + 'static>(
+        mut self,
+        func: impl Fn(Input<FunctionFailureEvent<T>>, StepTool) -> F + Send + Sync + 'static,
+    ) -> Self {
+        self.on_failure = Some(Box::new(move |input, step| func(input, step).boxed()));
+        self
     }
 
     pub fn function(&self, serve_origin: &str, serve_path: &str) -> Function {
@@ -739,7 +778,7 @@ pub struct StepRetry {
     pub attempts: u8,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum Trigger {
     EventTrigger {
