@@ -15,17 +15,17 @@
 - Documentation of intentionally deferred config features, if any remain unsupported after implementation
 
 * Checklist
-- [ ] Extend `FunctionOpts` to support the next tier of spec-defined fields with public builder-style setters and rustdoc
-- [ ] Add sync serialization for `cancel`
-- [ ] Add sync serialization for `idempotency`
-- [ ] Add sync serialization for `batchEvents`
-- [ ] Add sync serialization for `rateLimit`
-- [ ] Add sync serialization for `debounce`
-- [ ] Add sync serialization for `priority`
-- [ ] Add sync serialization for `concurrency`
-- [ ] Add sync serialization for `throttle`
-- [ ] Add sync serialization for `singleton`
-- [ ] Add sync serialization for `timeouts`
+- [X] Extend `FunctionOpts` to support the next tier of spec-defined fields with public builder-style setters and rustdoc
+- [X] Add sync serialization for `cancel`
+- [X] Add sync serialization for `idempotency`
+- [X] Add sync serialization for `batchEvents`
+- [X] Add sync serialization for `rateLimit`
+- [X] Add sync serialization for `debounce`
+- [X] Add sync serialization for `priority`
+- [X] Add sync serialization for `concurrency`
+- [X] Add sync serialization for `throttle`
+- [X] Add sync serialization for `singleton`
+- [X] Add sync serialization for `timeouts`
 - [ ] Add public `on_failure` config surface and sync serialization for failure handlers
 - [ ] Decide and document validation rules for invalid or unsupported combinations
 - [ ] Decide whether invalid configs are rejected eagerly in builders, at registration time, or only during sync serialization
@@ -33,7 +33,7 @@
 - [ ] Validate and document `batchEvents.maxSize` and `batchEvents.timeout` constraints
 - [ ] Validate and document supported `concurrency` forms, including numeric shorthand vs keyed entries and the maximum entry count
 - [ ] Decide and document whether failure handlers intentionally ignore inherited concurrency, singleton, and retry settings from the parent function
-- [ ] Add serialization tests for each new option surface
+- [X] Add serialization tests for each new option surface
 - [ ] Add negative tests for invalid config shapes and unsupported combinations
 - [ ] Update examples and README support notes to match the actual implementation
 - [ ] Update feature/support documentation to distinguish implemented config metadata from still-deferred runtime features

@@ -2,12 +2,13 @@ use crate::{
     client::Inngest,
     event::{Event, InngestEvent},
     step_tool::Step as StepTool,
+    utils::duration,
 };
 use futures::future::BoxFuture;
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use slug::slugify;
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, time::Duration};
 
 // NOTE: should T have Copy trait too?
 // so it can do something like `input.event` without moving.
@@ -26,11 +27,379 @@ pub struct InputCtx {
     pub attempt: u8,
 }
 
+/// A function-config time value accepted by the sync payload.
+///
+/// Durations are serialized as Inngest time strings such as `5m` or `30s`.
+/// Raw strings can be used when the spec accepts an expression or ISO 8601
+/// timestamp.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionTime {
+    Duration(Duration),
+    String(String),
+}
+
+impl From<Duration> for FunctionTime {
+    fn from(value: Duration) -> Self {
+        Self::Duration(value)
+    }
+}
+
+impl From<String> for FunctionTime {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
+impl From<&str> for FunctionTime {
+    fn from(value: &str) -> Self {
+        Self::String(value.to_string())
+    }
+}
+
+impl Serialize for FunctionTime {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let value = match self {
+            Self::Duration(duration) => duration::to_string(*duration),
+            Self::String(value) => value.clone(),
+        };
+
+        serializer.serialize_str(&value)
+    }
+}
+
+impl<'de> Deserialize<'de> for FunctionTime {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        if value.is_empty() {
+            return Err(D::Error::custom("function time values cannot be empty"));
+        }
+
+        Ok(Self::String(value))
+    }
+}
+
+/// Cancels a function run when a matching event is received.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionCancel {
+    pub event: String,
+    #[serde(rename = "if", skip_serializing_if = "Option::is_none")]
+    pub if_exp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<FunctionTime>,
+}
+
+impl FunctionCancel {
+    /// Creates a cancellation rule for the given event name.
+    pub fn new(event: &str) -> Self {
+        Self {
+            event: event.to_string(),
+            if_exp: None,
+            timeout: None,
+        }
+    }
+
+    /// Adds an expression that must evaluate to `true` to cancel the run.
+    pub fn if_exp(mut self, if_exp: &str) -> Self {
+        self.if_exp = Some(if_exp.to_string());
+        self
+    }
+
+    /// Restricts how long the cancellation rule remains active.
+    pub fn timeout<T: Into<FunctionTime>>(mut self, timeout: T) -> Self {
+        self.timeout = Some(timeout.into());
+        self
+    }
+}
+
+/// Configures event batching for a function trigger.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionBatchEvents {
+    #[serde(rename = "maxSize")]
+    pub max_size: u32,
+    pub timeout: FunctionTime,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+}
+
+impl FunctionBatchEvents {
+    /// Creates a batch configuration with the required size and timeout.
+    pub fn new<T: Into<FunctionTime>>(max_size: u32, timeout: T) -> Self {
+        Self {
+            max_size,
+            timeout: timeout.into(),
+            key: None,
+        }
+    }
+
+    /// Partitions batches by the expression result.
+    pub fn key(mut self, key: &str) -> Self {
+        self.key = Some(key.to_string());
+        self
+    }
+}
+
+/// Rate-limits how often a function can run within a period.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionRateLimit {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    pub limit: u32,
+    pub period: FunctionTime,
+}
+
+impl FunctionRateLimit {
+    /// Creates a rate-limit configuration with the required limit and period.
+    pub fn new<T: Into<FunctionTime>>(limit: u32, period: T) -> Self {
+        Self {
+            key: None,
+            limit,
+            period: period.into(),
+        }
+    }
+
+    /// Partitions rate limits by the expression result.
+    pub fn key(mut self, key: &str) -> Self {
+        self.key = Some(key.to_string());
+        self
+    }
+}
+
+/// Debounces function execution until a quiet period has elapsed.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionDebounce {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    pub period: FunctionTime,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<FunctionTime>,
+}
+
+impl FunctionDebounce {
+    /// Creates a debounce configuration with the required quiet period.
+    pub fn new<T: Into<FunctionTime>>(period: T) -> Self {
+        Self {
+            key: None,
+            period: period.into(),
+            timeout: None,
+        }
+    }
+
+    /// Partitions debounce state by the expression result.
+    pub fn key(mut self, key: &str) -> Self {
+        self.key = Some(key.to_string());
+        self
+    }
+
+    /// Caps how long the debounce window can continue to extend.
+    pub fn timeout<T: Into<FunctionTime>>(mut self, timeout: T) -> Self {
+        self.timeout = Some(timeout.into());
+        self
+    }
+}
+
+/// Controls execution priority relative to other queued runs.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionPriority {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run: Option<String>,
+}
+
+impl FunctionPriority {
+    /// Creates an empty priority configuration.
+    pub fn new() -> Self {
+        Self { run: None }
+    }
+
+    /// Sets the expression used to determine run priority.
+    pub fn run(mut self, run: &str) -> Self {
+        self.run = Some(run.to_string());
+        self
+    }
+}
+
+impl Default for FunctionPriority {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Defines how a keyed concurrency group is scoped.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub enum FunctionConcurrencyScope {
+    #[serde(rename = "fn")]
+    Function,
+    #[serde(rename = "env")]
+    Env,
+    #[serde(rename = "account")]
+    Account,
+}
+
+/// Configures one keyed concurrency limit.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionConcurrencyOption {
+    pub limit: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<FunctionConcurrencyScope>,
+}
+
+impl FunctionConcurrencyOption {
+    /// Creates a keyed concurrency option with the required limit.
+    pub fn new(limit: u32) -> Self {
+        Self {
+            limit,
+            key: None,
+            scope: None,
+        }
+    }
+
+    /// Partitions concurrency groups by the expression result.
+    pub fn key(mut self, key: &str) -> Self {
+        self.key = Some(key.to_string());
+        self
+    }
+
+    /// Sets the scope for the concurrency group.
+    pub fn scope(mut self, scope: FunctionConcurrencyScope) -> Self {
+        self.scope = Some(scope);
+        self
+    }
+}
+
+/// Configures how function executions are concurrency-limited.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum FunctionConcurrency {
+    Limit(u32),
+    Keyed(Vec<FunctionConcurrencyOption>),
+}
+
+impl FunctionConcurrency {
+    /// Creates a concurrency configuration using the numeric shorthand.
+    pub fn limit(limit: u32) -> Self {
+        Self::Limit(limit)
+    }
+
+    /// Creates a concurrency configuration using keyed options.
+    pub fn keyed(options: Vec<FunctionConcurrencyOption>) -> Self {
+        Self::Keyed(options)
+    }
+}
+
+/// Throttles function execution to a steady rate.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionThrottle {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    pub limit: u32,
+    pub period: FunctionTime,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub burst: Option<u32>,
+}
+
+impl FunctionThrottle {
+    /// Creates a throttle configuration with the required limit and period.
+    pub fn new<T: Into<FunctionTime>>(limit: u32, period: T) -> Self {
+        Self {
+            key: None,
+            limit,
+            period: period.into(),
+            burst: None,
+        }
+    }
+
+    /// Partitions throttle groups by the expression result.
+    pub fn key(mut self, key: &str) -> Self {
+        self.key = Some(key.to_string());
+        self
+    }
+
+    /// Sets the burst capacity allowed above the steady-state rate.
+    pub fn burst(mut self, burst: u32) -> Self {
+        self.burst = Some(burst);
+        self
+    }
+}
+
+/// Determines how singleton runs behave when a duplicate key is triggered.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum FunctionSingletonMode {
+    Skip,
+    Cancel,
+}
+
+/// Ensures only one run per singleton key is active at a time.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionSingleton {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    pub mode: FunctionSingletonMode,
+}
+
+impl FunctionSingleton {
+    /// Creates a singleton configuration with the required behavior mode.
+    pub fn new(mode: FunctionSingletonMode) -> Self {
+        Self { key: None, mode }
+    }
+
+    /// Partitions singleton groups by the expression result.
+    pub fn key(mut self, key: &str) -> Self {
+        self.key = Some(key.to_string());
+        self
+    }
+}
+
+/// Controls how long a function can wait to start or finish.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FunctionTimeouts {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<FunctionTime>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finish: Option<FunctionTime>,
+}
+
+impl FunctionTimeouts {
+    /// Creates an empty timeout configuration.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the maximum time from trigger to first execution attempt.
+    pub fn start<T: Into<FunctionTime>>(mut self, start: T) -> Self {
+        self.start = Some(start.into());
+        self
+    }
+
+    /// Sets the maximum total runtime allowed for the function.
+    pub fn finish<T: Into<FunctionTime>>(mut self, finish: T) -> Self {
+        self.finish = Some(finish.into());
+        self
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FunctionOpts {
     pub id: String,
     pub name: Option<String>,
     pub retries: u8,
+    pub cancel: Vec<FunctionCancel>,
+    pub idempotency: Option<String>,
+    pub batch_events: Option<FunctionBatchEvents>,
+    pub rate_limit: Option<FunctionRateLimit>,
+    pub debounce: Option<FunctionDebounce>,
+    pub priority: Option<FunctionPriority>,
+    pub concurrency: Option<FunctionConcurrency>,
+    pub throttle: Option<FunctionThrottle>,
+    pub singleton: Option<FunctionSingleton>,
+    pub timeouts: Option<FunctionTimeouts>,
 }
 
 impl Default for FunctionOpts {
@@ -39,6 +408,16 @@ impl Default for FunctionOpts {
             id: String::new(),
             name: None,
             retries: 3,
+            cancel: Vec::new(),
+            idempotency: None,
+            batch_events: None,
+            rate_limit: None,
+            debounce: None,
+            priority: None,
+            concurrency: None,
+            throttle: None,
+            singleton: None,
+            timeouts: None,
         }
     }
 }
@@ -61,6 +440,66 @@ impl FunctionOpts {
     /// Overrides the number of retry attempts the executor should schedule.
     pub fn retries(mut self, retries: u8) -> Self {
         self.retries = retries;
+        self
+    }
+
+    /// Adds a cancellation rule to the function definition.
+    pub fn cancel(mut self, cancel: FunctionCancel) -> Self {
+        self.cancel.push(cancel);
+        self
+    }
+
+    /// Sets an idempotency expression for the function.
+    pub fn idempotency(mut self, idempotency: &str) -> Self {
+        self.idempotency = Some(idempotency.to_string());
+        self
+    }
+
+    /// Configures event batching for the function trigger.
+    pub fn batch_events(mut self, batch_events: FunctionBatchEvents) -> Self {
+        self.batch_events = Some(batch_events);
+        self
+    }
+
+    /// Configures rate-limiting for the function.
+    pub fn rate_limit(mut self, rate_limit: FunctionRateLimit) -> Self {
+        self.rate_limit = Some(rate_limit);
+        self
+    }
+
+    /// Configures debouncing for the function.
+    pub fn debounce(mut self, debounce: FunctionDebounce) -> Self {
+        self.debounce = Some(debounce);
+        self
+    }
+
+    /// Configures execution priority for the function.
+    pub fn priority(mut self, priority: FunctionPriority) -> Self {
+        self.priority = Some(priority);
+        self
+    }
+
+    /// Configures concurrency limits for the function.
+    pub fn concurrency(mut self, concurrency: FunctionConcurrency) -> Self {
+        self.concurrency = Some(concurrency);
+        self
+    }
+
+    /// Configures throttling for the function.
+    pub fn throttle(mut self, throttle: FunctionThrottle) -> Self {
+        self.throttle = Some(throttle);
+        self
+    }
+
+    /// Configures singleton execution for the function.
+    pub fn singleton(mut self, singleton: FunctionSingleton) -> Self {
+        self.singleton = Some(singleton);
+        self
+    }
+
+    /// Configures execution timeouts for the function.
+    pub fn timeouts(mut self, timeouts: FunctionTimeouts) -> Self {
+        self.timeouts = Some(timeouts);
         self
     }
 }
@@ -130,6 +569,20 @@ impl<T, E> ServableFn<T, E> {
             name,
             triggers: vec![self.trigger.clone()],
             steps,
+            cancel: self.opts.cancel.clone(),
+            idempotency: self.opts.idempotency.clone(),
+            batch_events: self.opts.batch_events.clone(),
+            rate_limit: if self.opts.idempotency.is_some() {
+                None
+            } else {
+                self.opts.rate_limit.clone()
+            },
+            debounce: self.opts.debounce.clone(),
+            priority: self.opts.priority.clone(),
+            concurrency: self.opts.concurrency.clone(),
+            throttle: self.opts.throttle.clone(),
+            singleton: self.opts.singleton.clone(),
+            timeouts: self.opts.timeouts.clone(),
         }
     }
 }
@@ -140,6 +593,26 @@ pub struct Function {
     pub name: String,
     pub triggers: Vec<Trigger>,
     pub steps: HashMap<String, Step>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cancel: Vec<FunctionCancel>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idempotency: Option<String>,
+    #[serde(rename = "batchEvents", skip_serializing_if = "Option::is_none")]
+    pub batch_events: Option<FunctionBatchEvents>,
+    #[serde(rename = "rateLimit", skip_serializing_if = "Option::is_none")]
+    pub rate_limit: Option<FunctionRateLimit>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub debounce: Option<FunctionDebounce>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<FunctionPriority>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub concurrency: Option<FunctionConcurrency>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub throttle: Option<FunctionThrottle>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub singleton: Option<FunctionSingleton>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeouts: Option<FunctionTimeouts>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

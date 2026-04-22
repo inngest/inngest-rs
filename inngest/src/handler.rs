@@ -66,6 +66,20 @@ impl DynamicServableFn {
             name,
             triggers: vec![self.trigger.clone()],
             steps,
+            cancel: self.opts.cancel.clone(),
+            idempotency: self.opts.idempotency.clone(),
+            batch_events: self.opts.batch_events.clone(),
+            rate_limit: if self.opts.idempotency.is_some() {
+                None
+            } else {
+                self.opts.rate_limit.clone()
+            },
+            debounce: self.opts.debounce.clone(),
+            priority: self.opts.priority.clone(),
+            concurrency: self.opts.concurrency.clone(),
+            throttle: self.opts.throttle.clone(),
+            singleton: self.opts.singleton.clone(),
+            timeouts: self.opts.timeouts.clone(),
         }
     }
 
@@ -902,7 +916,11 @@ fn run_request_uses_api(body: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::function::ServableFn;
+    use crate::function::{
+        FunctionBatchEvents, FunctionCancel, FunctionConcurrency, FunctionConcurrencyOption,
+        FunctionConcurrencyScope, FunctionDebounce, FunctionPriority, FunctionRateLimit,
+        FunctionSingleton, FunctionSingletonMode, FunctionThrottle, FunctionTimeouts, ServableFn,
+    };
     use axum::{
         extract::State,
         http::{HeaderMap, StatusCode, Uri},
@@ -1229,6 +1247,154 @@ mod tests {
             "http://127.0.0.1:3000/api/inngest?fnId=test-app-first&stepId=step"
         );
         assert!(!payload.url.contains("deployId="));
+    }
+
+    #[test]
+    fn sync_payload_serializes_function_config_metadata() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first")
+                .cancel(
+                    FunctionCancel::new("app/cancel")
+                        .if_exp("event.data.id == async.data.id")
+                        .timeout(Duration::from_secs(30)),
+                )
+                .batch_events(
+                    FunctionBatchEvents::new(10, Duration::from_secs(45))
+                        .key("event.data.account_id"),
+                )
+                .rate_limit(
+                    FunctionRateLimit::new(5, Duration::from_secs(60)).key("event.data.user_id"),
+                )
+                .debounce(
+                    FunctionDebounce::new(Duration::from_secs(5))
+                        .key("event.data.session_id")
+                        .timeout(Duration::from_secs(30)),
+                )
+                .priority(FunctionPriority::new().run("event.data.priority"))
+                .concurrency(FunctionConcurrency::keyed(vec![
+                    FunctionConcurrencyOption::new(3)
+                        .key("event.data.account_id")
+                        .scope(FunctionConcurrencyScope::Env),
+                ]))
+                .throttle(
+                    FunctionThrottle::new(10, Duration::from_secs(60))
+                        .key("event.data.region")
+                        .burst(2),
+                )
+                .singleton(
+                    FunctionSingleton::new(FunctionSingletonMode::Cancel)
+                        .key("event.data.workflow_id"),
+                )
+                .timeouts(
+                    FunctionTimeouts::new()
+                        .start(Duration::from_secs(30))
+                        .finish(Duration::from_secs(300)),
+                ),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, _step| async move { Ok(json!({ "ok": true })) },
+        );
+
+        handler.register_fn(func);
+
+        let payload = handler.sync_payload(&Headers::from(HeaderMap::new()), "axum");
+        let function = payload
+            .functions
+            .into_iter()
+            .next()
+            .expect("registered function should be present");
+        let serialized = serde_json::to_value(function).expect("function should serialize");
+
+        assert_eq!(
+            serialized,
+            json!({
+                "id": "test-app-first",
+                "name": "test-app-first",
+                "triggers": [{ "event": "test/first", "expression": null }],
+                "steps": {
+                    "step": {
+                        "id": "step",
+                        "name": "step",
+                        "runtime": {
+                            "url": "http://127.0.0.1:3000/api/inngest?fnId=test-app-first&stepId=step",
+                            "type": "http"
+                        },
+                        "retries": { "attempts": 3 }
+                    }
+                },
+                "cancel": [{
+                    "event": "app/cancel",
+                    "if": "event.data.id == async.data.id",
+                    "timeout": "30s"
+                }],
+                "batchEvents": {
+                    "maxSize": 10,
+                    "timeout": "45s",
+                    "key": "event.data.account_id"
+                },
+                "rateLimit": {
+                    "key": "event.data.user_id",
+                    "limit": 5,
+                    "period": "1m"
+                },
+                "debounce": {
+                    "key": "event.data.session_id",
+                    "period": "5s",
+                    "timeout": "30s"
+                },
+                "priority": {
+                    "run": "event.data.priority"
+                },
+                "concurrency": [{
+                    "limit": 3,
+                    "key": "event.data.account_id",
+                    "scope": "env"
+                }],
+                "throttle": {
+                    "key": "event.data.region",
+                    "limit": 10,
+                    "period": "1m",
+                    "burst": 2
+                },
+                "singleton": {
+                    "key": "event.data.workflow_id",
+                    "mode": "cancel"
+                },
+                "timeouts": {
+                    "start": "30s",
+                    "finish": "5m"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn sync_payload_omits_rate_limit_when_idempotency_is_set() {
+        let client = Inngest::new("test-app");
+        let mut handler = Handler::new(&client);
+
+        let func: ServableFn<FirstEvent, Error> = client.create_function(
+            FunctionOpts::new("first")
+                .idempotency("event.data.id")
+                .rate_limit(FunctionRateLimit::new(5, Duration::from_secs(60))),
+            Trigger::event("test/first"),
+            |_input: Input<FirstEvent>, _step| async move { Ok(json!({ "ok": true })) },
+        );
+
+        handler.register_fn(func);
+
+        let payload = handler.sync_payload(&Headers::from(HeaderMap::new()), "axum");
+        let function = payload
+            .functions
+            .into_iter()
+            .next()
+            .expect("registered function should be present");
+        let serialized = serde_json::to_value(function).expect("function should serialize");
+
+        assert_eq!(serialized["idempotency"], json!("event.data.id"));
+        assert!(serialized.get("rateLimit").is_none());
     }
 
     #[tokio::test]
