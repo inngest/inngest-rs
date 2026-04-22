@@ -1,19 +1,21 @@
 #+TITLE: Function Config Surface
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-16
-#+STATUS: Draft
+#+STATUS: Active
 
 * Goal
 - Expand the function definition API and sync serialization to cover the spec-defined function metadata.
+- Turn the currently minimal `FunctionOpts` surface into an explicit, test-covered sync contract.
 
 * Scope
 - Public option types
 - Sync payload serialization
 - Validation of supported config shapes
-- Failure handler configuration
+- Failure handler (`on_failure`) configuration
+- Documentation of intentionally deferred config features, if any remain unsupported after implementation
 
 * Checklist
-- [ ] Extend `FunctionOpts` to support the next tier of spec-defined fields
+- [ ] Extend `FunctionOpts` to support the next tier of spec-defined fields with public builder-style setters and rustdoc
 - [ ] Add sync serialization for `cancel`
 - [ ] Add sync serialization for `idempotency`
 - [ ] Add sync serialization for `batchEvents`
@@ -24,16 +26,26 @@
 - [ ] Add sync serialization for `throttle`
 - [ ] Add sync serialization for `singleton`
 - [ ] Add sync serialization for `timeouts`
-- [ ] Add public config surface and sync serialization for failure handlers
+- [ ] Add public `on_failure` config surface and sync serialization for failure handlers
 - [ ] Decide and document validation rules for invalid or unsupported combinations
+- [ ] Decide whether invalid configs are rejected eagerly in builders, at registration time, or only during sync serialization
+- [ ] Validate and document `idempotency` overriding `rateLimit`
+- [ ] Validate and document `batchEvents.maxSize` and `batchEvents.timeout` constraints
+- [ ] Validate and document supported `concurrency` forms, including numeric shorthand vs keyed entries and the maximum entry count
+- [ ] Decide and document whether failure handlers intentionally ignore inherited concurrency, singleton, and retry settings from the parent function
 - [ ] Add serialization tests for each new option surface
+- [ ] Add negative tests for invalid config shapes and unsupported combinations
 - [ ] Update examples and README support notes to match the actual implementation
+- [ ] Update feature/support documentation to distinguish implemented config metadata from still-deferred runtime features
 
 * Exit Criteria
 - [ ] Function definitions can express the supported spec-level scheduling and control metadata
 - [ ] The sync payload matches the public API surface
-- [ ] The new config surface is covered by serialization tests
+- [ ] The new config surface is covered by serialization and validation tests
 - [ ] Failure handler configuration is represented consistently in the public API and sync payload
+- [ ] README and examples no longer imply support mismatches for shipped function config metadata
 
 * Out of Scope
 - Middleware hooks, covered by `006`
+- Connect, streaming, and checkpointing, covered by `007`
+- Step-surface gaps such as `race!` or AI/gateway step types, covered by `005`
