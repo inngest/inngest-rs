@@ -2,7 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.0] - 2024-11-01
+## [0.2.0] - 2026-04-22
+
+### 🚀 Features
+
+- *(step)* Add durable send_event support (#56)
+- *(group)* Call request conformance (#62)
+
+### 🐛 Bug Fixes
+
+- Default to Cloud mode following RFC (#51)
+- *(protocol)* Align baseline HTTP wire format (#58)
+- *(handler)* Harden signature verification and mode selection (#59)
+- *(steps)* Align step identity and memoization behavior (#60)
+
+### 🚜 Refactor
+
+- *(handler)* Support mixed function types (#55)
+
+### 🧪 Testing
+
+- *(e2e)* Expand dev-server integration coverage (#57)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(ci)* Update CI flow and add plans for spec compliance (#53)
+- Tweak plan metadata and reporting (#61)
+
+## [0.1.1] - 2024-11-01
 
 ### 📚 Documentation
 
