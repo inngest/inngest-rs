@@ -1,39 +1,51 @@
 #+TITLE: Function Config Surface
 #+AUTHOR: Darwin D. Wu
 #+DATE: 2026-04-16
-#+STATUS: Draft
+#+STATUS: Done
 
 * Goal
 - Expand the function definition API and sync serialization to cover the spec-defined function metadata.
+- Turn the currently minimal `FunctionOpts` surface into an explicit, test-covered sync contract.
 
 * Scope
 - Public option types
 - Sync payload serialization
 - Validation of supported config shapes
-- Failure handler configuration
+- Failure handler (`on_failure`) configuration
+- Documentation of intentionally deferred config features, if any remain unsupported after implementation
 
 * Checklist
-- [ ] Extend `FunctionOpts` to support the next tier of spec-defined fields
-- [ ] Add sync serialization for `cancel`
-- [ ] Add sync serialization for `idempotency`
-- [ ] Add sync serialization for `batchEvents`
-- [ ] Add sync serialization for `rateLimit`
-- [ ] Add sync serialization for `debounce`
-- [ ] Add sync serialization for `priority`
-- [ ] Add sync serialization for `concurrency`
-- [ ] Add sync serialization for `throttle`
-- [ ] Add sync serialization for `singleton`
-- [ ] Add sync serialization for `timeouts`
-- [ ] Add public config surface and sync serialization for failure handlers
-- [ ] Decide and document validation rules for invalid or unsupported combinations
-- [ ] Add serialization tests for each new option surface
-- [ ] Update examples and README support notes to match the actual implementation
+- [X] Extend `FunctionOpts` to support the next tier of spec-defined fields with public builder-style setters and rustdoc
+- [X] Add sync serialization for `cancel`
+- [X] Add sync serialization for `idempotency`
+- [X] Add sync serialization for `batchEvents`
+- [X] Add sync serialization for `rateLimit`
+- [X] Add sync serialization for `debounce`
+- [X] Add sync serialization for `priority`
+- [X] Add sync serialization for `concurrency`
+- [X] Add sync serialization for `throttle`
+- [X] Add sync serialization for `singleton`
+- [X] Add sync serialization for `timeouts`
+- [X] Add public `on_failure` config surface and sync serialization for failure handlers
+- [X] Decide and document validation rules for invalid or unsupported combinations
+- [X] Decide whether invalid configs are rejected eagerly in builders, at registration time, or only during sync serialization
+- [X] Validate and document `idempotency` overriding `rateLimit`
+- [X] Validate and document `batchEvents.maxSize` and `batchEvents.timeout` constraints
+- [X] Validate and document supported `concurrency` forms, including numeric shorthand vs keyed entries and the maximum entry count
+- [X] Decide and document whether failure handlers intentionally ignore inherited concurrency, singleton, and retry settings from the parent function
+- [X] Add serialization tests for each new option surface
+- [X] Add negative tests for invalid config shapes and unsupported combinations
+- [X] Update examples and README support notes to match the actual implementation
+- [X] Update feature/support documentation to distinguish implemented config metadata from still-deferred runtime features
 
 * Exit Criteria
-- [ ] Function definitions can express the supported spec-level scheduling and control metadata
-- [ ] The sync payload matches the public API surface
-- [ ] The new config surface is covered by serialization tests
-- [ ] Failure handler configuration is represented consistently in the public API and sync payload
+- [X] Function definitions can express the supported spec-level scheduling and control metadata
+- [X] The sync payload matches the public API surface
+- [X] The new config surface is covered by serialization and validation tests
+- [X] Failure handler configuration is represented consistently in the public API and sync payload
+- [X] README and examples no longer imply support mismatches for shipped function config metadata
 
 * Out of Scope
 - Middleware hooks, covered by `006`
+- Connect, streaming, and checkpointing, covered by `007`
+- Step-surface gaps such as `race!` or AI/gateway step types, covered by `005`

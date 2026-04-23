@@ -39,8 +39,8 @@ If there are other frameworks you like to see, feel free to submit an issue, or 
 | `step.wait_for_event` | :white_check_mark: |
 | `step.invoke`         | :white_check_mark: |
 | `step.send_event`     | :white_check_mark: |
-| CancelOn              | :x:                |
-| Failure handler       | :x:                |
+| CancelOn              | :white_check_mark: |
+| Failure handler       | :white_check_mark: |
 | Retry controls        | :white_check_mark: |
 | Middleware            | :x:                |
 | Connect               | :x:                |
@@ -149,3 +149,29 @@ fn step_run_fn(client: &Inngest) -> ServableFn<StepRunEventData, Error> {
 ```
 
 The handler can register functions with different event payload types on the same app. When batching them with `register_fns(...)`, convert each function with `.into()` as shown above.
+
+Function definitions also support sync metadata such as `cancel`, `idempotency`, `batch_events`, `rate_limit`, `debounce`, `priority`, `concurrency`, `throttle`, `singleton`, and `timeouts`.
+
+Failure handlers use a Rust-style `on_failure(...)` method on the returned `ServableFn`:
+
+```rs
+fn hello_with_failure_fn(client: &Inngest) -> ServableFn<HelloEventData, Error> {
+    client
+        .create_function(
+            FunctionOpts::new("hello-func"),
+            Trigger::event("test/hello"),
+            |input: Input<HelloEventData>, _step: StepTool| async move {
+                Ok(json!({ "hello": input.event.data.msg }))
+            },
+        )
+        .on_failure(
+            |input: Input<FunctionFailureEvent<HelloEventData>>, _step: StepTool| async move {
+                Ok(json!({
+                    "failed_run_id": input.event.data.run_id,
+                    "message": input.event.data.error.message,
+                    "original": input.event.data.event.data.msg,
+                }))
+            },
+        )
+}
+```
