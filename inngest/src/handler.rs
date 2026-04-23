@@ -1023,6 +1023,7 @@ mod tests {
     #[derive(Clone, Debug, Default, PartialEq, Eq)]
     struct SyncRequestRecord {
         authorization: Option<String>,
+        body: Value,
         env: Option<String>,
         path: String,
         query: Option<String>,
@@ -1845,6 +1846,159 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].path, "/fn/register");
         assert_eq!(records[0].query, Some("deployId=deploy-123".to_string()));
+    }
+
+    #[tokio::test]
+    async fn sync_sends_function_config_metadata_in_request_body() {
+        let (origin, records) =
+            spawn_sync_server(vec![(StatusCode::OK, sync_success_body())]).await;
+        let client = Inngest::new("test-app").api_origin(&origin);
+        let mut handler = Handler::new(&client);
+
+        let func: ServableFn<FirstEvent, Error> = client
+            .create_function(
+                FunctionOpts::new("first")
+                    .cancel(
+                        FunctionCancel::new("app/cancel")
+                            .if_exp("event.data.id == async.data.id")
+                            .timeout(Duration::from_secs(30)),
+                    )
+                    .idempotency("event.data.id")
+                    .rate_limit(
+                        FunctionRateLimit::new(5, Duration::from_secs(60))
+                            .key("event.data.user_id"),
+                    )
+                    .batch_events(
+                        FunctionBatchEvents::new(10, Duration::from_secs(45))
+                            .key("event.data.account_id"),
+                    )
+                    .debounce(
+                        FunctionDebounce::new(Duration::from_secs(5))
+                            .key("event.data.session_id")
+                            .timeout(Duration::from_secs(30)),
+                    )
+                    .priority(FunctionPriority::new().run("event.data.priority"))
+                    .concurrency(FunctionConcurrency::keyed(vec![
+                        FunctionConcurrencyOption::new(3)
+                            .key("event.data.account_id")
+                            .scope(FunctionConcurrencyScope::Env),
+                    ]))
+                    .throttle(
+                        FunctionThrottle::new(10, Duration::from_secs(60))
+                            .key("event.data.region")
+                            .burst(2),
+                    )
+                    .singleton(
+                        FunctionSingleton::new(FunctionSingletonMode::Cancel)
+                            .key("event.data.workflow_id"),
+                    )
+                    .timeouts(
+                        FunctionTimeouts::new()
+                            .start(Duration::from_secs(30))
+                            .finish(Duration::from_secs(300)),
+                    ),
+                Trigger::event("test/first"),
+                |_input: Input<FirstEvent>, _step| async move { Ok(json!({ "ok": true })) },
+            )
+            .on_failure(
+                |input: Input<FunctionFailureEvent<FirstEvent>>, _step| async move {
+                    Ok(json!({ "failed": input.event.data.function_id }))
+                },
+            );
+        handler.register_fn(func);
+
+        let result = handler
+            .sync(
+                &Headers::from(HeaderMap::new()),
+                &SyncQueryParams { deploy_id: None },
+                "axum",
+            )
+            .await
+            .expect("sync should succeed");
+
+        match result {
+            SyncResponse::OutOfBand(result) => assert!(result.modified),
+            SyncResponse::InBand(_) => panic!("sync should use the out-of-band response"),
+        }
+
+        let records = records.lock().await;
+        assert_eq!(records.len(), 1);
+
+        let functions = records[0].body["functions"]
+            .as_array()
+            .expect("sync request should include functions");
+        assert_eq!(functions.len(), 2);
+
+        let main_function = functions
+            .iter()
+            .find(|function| function["id"] == "test-app-first")
+            .expect("main function should be synced");
+        assert_eq!(main_function["cancel"][0]["event"], json!("app/cancel"));
+        assert_eq!(
+            main_function["batchEvents"],
+            json!({
+                "maxSize": 10,
+                "timeout": "45s",
+                "key": "event.data.account_id"
+            })
+        );
+        assert_eq!(main_function["idempotency"], json!("event.data.id"));
+        assert!(main_function.get("rateLimit").is_none());
+        assert_eq!(
+            main_function["debounce"],
+            json!({
+                "key": "event.data.session_id",
+                "period": "5s",
+                "timeout": "30s"
+            })
+        );
+        assert_eq!(main_function["priority"], json!({ "run": "event.data.priority" }));
+        assert_eq!(
+            main_function["concurrency"],
+            json!([{
+                "limit": 3,
+                "key": "event.data.account_id",
+                "scope": "env"
+            }])
+        );
+        assert_eq!(
+            main_function["throttle"],
+            json!({
+                "key": "event.data.region",
+                "limit": 10,
+                "period": "1m",
+                "burst": 2
+            })
+        );
+        assert_eq!(
+            main_function["singleton"],
+            json!({
+                "key": "event.data.workflow_id",
+                "mode": "cancel"
+            })
+        );
+        assert_eq!(
+            main_function["timeouts"],
+            json!({
+                "start": "30s",
+                "finish": "5m"
+            })
+        );
+
+        let failure_function = functions
+            .iter()
+            .find(|function| function["id"] == "test-app-first-failure")
+            .expect("failure function should be synced");
+        assert_eq!(
+            failure_function["triggers"],
+            json!([{
+                "event": "inngest/function.failed",
+                "expression": "event.data.function_id == \"test-app-first\""
+            }])
+        );
+        assert_eq!(failure_function["steps"]["step"]["retries"], json!({ "attempts": 0 }));
+        assert!(failure_function.get("concurrency").is_none());
+        assert!(failure_function.get("singleton").is_none());
     }
 
     #[tokio::test]
@@ -2722,6 +2876,7 @@ mod tests {
         ) -> impl IntoResponse {
             state.records.lock().await.push(SyncRequestRecord {
                 authorization: header_value(&headers, "authorization"),
+                body: Value::Null,
                 env: header_value(&headers, header::INNGEST_ENV),
                 path: uri.path().to_string(),
                 query: uri.query().map(|query| query.to_string()),
@@ -2744,6 +2899,7 @@ mod tests {
         ) -> impl IntoResponse {
             state.records.lock().await.push(SyncRequestRecord {
                 authorization: header_value(&headers, "authorization"),
+                body: Value::Null,
                 env: header_value(&headers, header::INNGEST_ENV),
                 path: uri.path().to_string(),
                 query: uri.query().map(|query| query.to_string()),
@@ -2787,9 +2943,11 @@ mod tests {
         State(state): State<SyncServerState>,
         headers: HeaderMap,
         uri: Uri,
+        body: String,
     ) -> (StatusCode, String) {
         state.records.lock().await.push(SyncRequestRecord {
             authorization: header_value(&headers, "authorization"),
+            body: serde_json::from_str(&body).expect("sync request body should be valid JSON"),
             env: header_value(&headers, header::INNGEST_ENV),
             path: uri.path().to_string(),
             query: uri.query().map(|query| query.to_string()),
