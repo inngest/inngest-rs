@@ -6,7 +6,7 @@ use inngest::{
     event::Event,
     function::{
         FunctionBatchEvents, FunctionCancel, FunctionConcurrency, FunctionDebounce,
-        FunctionFailureEvent, FunctionOpts, FunctionRateLimit, FunctionSingleton,
+        FunctionFailureEvent, FunctionOpts, FunctionPriority, FunctionRateLimit, FunctionSingleton,
         FunctionSingletonMode, FunctionThrottle, Input, ServableFn, Trigger,
     },
     result::{DevError, Error},
@@ -68,6 +68,12 @@ struct KeyedEventData {
     message: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct PrioritizedEventData {
+    message: String,
+    priority: i32,
+}
+
 #[derive(Debug, Deserialize)]
 struct ApiEnvelope<T> {
     data: T,
@@ -86,14 +92,20 @@ async fn wait_for_value<T: Clone>(
             return value;
         }
 
-        assert!(Instant::now() < deadline, "timed out waiting for state predicate");
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for state predicate"
+        );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
 async fn fetch_run_record(run_id: &str) -> Option<e2e_support::RunRecord> {
     let response = reqwest::Client::new()
-        .get(format!("{}/v1/runs/{run_id}", e2e_support::DEV_SERVER_ORIGIN))
+        .get(format!(
+            "{}/v1/runs/{run_id}",
+            e2e_support::DEV_SERVER_ORIGIN
+        ))
         .send()
         .await
         .expect("run lookup should complete");
@@ -459,6 +471,106 @@ async fn debounce_runs_once_with_the_latest_event_payload() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn priority_prefers_higher_priority_runs_once_concurrency_unblocks() {
+    let _lock = DevServerLock::acquire();
+    let _dev_server = DevServer::start().await;
+
+    let app_name = e2e_support::unique_name("function-config-priority-app");
+    let event_name = e2e_support::unique_name("test.function.priority");
+
+    let client = Inngest::new(&app_name).dev(e2e_support::DEV_SERVER_ORIGIN);
+    let step_starts = Arc::new(Mutex::new(Vec::<String>::new()));
+
+    let step_starts_capture = Arc::clone(&step_starts);
+    let func: ServableFn<PrioritizedEventData, Error> = client.create_function(
+        FunctionOpts::new("priority-parent")
+            .name("Priority Parent")
+            .priority(FunctionPriority::new().run("event.data.priority"))
+            .concurrency(FunctionConcurrency::limit(1)),
+        Trigger::event(&event_name),
+        move |input: Input<PrioritizedEventData>, step: StepTool| {
+            let step_starts_capture = Arc::clone(&step_starts_capture);
+
+            async move {
+                let message = input.event.data.message.clone();
+                let step_result: String = step
+                    .run("priority-step", {
+                        let message = message.clone();
+                        move || {
+                            let step_starts_capture = Arc::clone(&step_starts_capture);
+                            let message = message.clone();
+
+                            async move {
+                                step_starts_capture.lock().unwrap().push(message.clone());
+
+                                if message == "blocker" {
+                                    tokio::time::sleep(Duration::from_millis(1500)).await;
+                                }
+
+                                Ok::<_, E2eTestError>(message)
+                            }
+                        }
+                    })
+                    .await?;
+
+                Ok(json!({ "message": step_result }))
+            }
+        },
+    );
+
+    let app = spawn_app(client.clone(), vec![func.into()]).await;
+    app.sync().await;
+
+    client
+        .send_event(&Event::new(
+            &event_name,
+            PrioritizedEventData {
+                message: "blocker".to_string(),
+                priority: 0,
+            },
+        ))
+        .await
+        .expect("blocking priority event should send successfully");
+
+    wait_for_value(&step_starts, Duration::from_secs(10), |starts| {
+        starts.iter().any(|message| message == "blocker")
+    })
+    .await;
+
+    client
+        .send_event(&Event::new(
+            &event_name,
+            PrioritizedEventData {
+                message: "low".to_string(),
+                priority: -10,
+            },
+        ))
+        .await
+        .expect("low priority event should send successfully");
+
+    client
+        .send_event(&Event::new(
+            &event_name,
+            PrioritizedEventData {
+                message: "high".to_string(),
+                priority: 10,
+            },
+        ))
+        .await
+        .expect("high priority event should send successfully");
+
+    let starts = wait_for_value(&step_starts, Duration::from_secs(20), |starts| {
+        starts.len() == 3
+    })
+    .await;
+
+    assert_eq!(
+        starts,
+        vec!["blocker".to_string(), "high".to_string(), "low".to_string()]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn singleton_skip_suppresses_a_second_run_for_the_same_key() {
     let _lock = DevServerLock::acquire();
     let _dev_server = DevServer::start().await;
@@ -506,7 +618,10 @@ async fn singleton_skip_suppresses_a_second_run_for_the_same_key() {
         .await
         .expect("first singleton event should send successfully");
 
-    let started = wait_for_value(&started_runs, Duration::from_secs(5), |runs| !runs.is_empty()).await;
+    let started = wait_for_value(&started_runs, Duration::from_secs(5), |runs| {
+        !runs.is_empty()
+    })
+    .await;
     let first_run_id = started
         .keys()
         .next()
@@ -532,6 +647,108 @@ async fn singleton_skip_suppresses_a_second_run_for_the_same_key() {
     assert_eq!(
         started.values().cloned().collect::<Vec<_>>(),
         vec!["first".to_string()]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn singleton_cancel_replaces_an_in_flight_run_for_the_same_key() {
+    let _lock = DevServerLock::acquire();
+    let _dev_server = DevServer::start().await;
+
+    let app_name = e2e_support::unique_name("function-config-singleton-cancel-app");
+    let event_name = e2e_support::unique_name("test.function.singleton.cancel");
+
+    let client = Inngest::new(&app_name).dev(e2e_support::DEV_SERVER_ORIGIN);
+    let started_runs = Arc::new(Mutex::new(HashMap::<String, String>::new()));
+    let completed_messages = Arc::new(Mutex::new(Vec::<String>::new()));
+
+    let started_runs_capture = Arc::clone(&started_runs);
+    let completed_messages_capture = Arc::clone(&completed_messages);
+    let func: ServableFn<KeyedEventData, Error> = client.create_function(
+        FunctionOpts::new("singleton-cancel-parent")
+            .name("Singleton Cancel Parent")
+            .singleton(FunctionSingleton::new(FunctionSingletonMode::Cancel).key("event.data.key")),
+        Trigger::event(&event_name),
+        move |input: Input<KeyedEventData>, step: StepTool| {
+            let started_runs_capture = Arc::clone(&started_runs_capture);
+            let completed_messages_capture = Arc::clone(&completed_messages_capture);
+
+            async move {
+                started_runs_capture
+                    .lock()
+                    .unwrap()
+                    .insert(input.event.data.message.clone(), input.ctx.run_id.clone());
+
+                if input.event.data.message == "first" {
+                    step.sleep("hold-singleton-cancel", Duration::from_secs(5))?;
+                }
+
+                completed_messages_capture
+                    .lock()
+                    .unwrap()
+                    .push(input.event.data.message.clone());
+
+                Ok(json!({ "message": input.event.data.message }))
+            }
+        },
+    );
+
+    let app = spawn_app(client.clone(), vec![func.into()]).await;
+    app.sync().await;
+
+    client
+        .send_event(&Event::new(
+            &event_name,
+            KeyedEventData {
+                key: "group-1".to_string(),
+                message: "first".to_string(),
+            },
+        ))
+        .await
+        .expect("first singleton cancel event should send successfully");
+
+    let started = wait_for_value(&started_runs, Duration::from_secs(5), |runs| {
+        runs.contains_key("first")
+    })
+    .await;
+    let first_run_id = started
+        .get("first")
+        .cloned()
+        .expect("first singleton cancel run should exist");
+
+    client
+        .send_event(&Event::new(
+            &event_name,
+            KeyedEventData {
+                key: "group-1".to_string(),
+                message: "second".to_string(),
+            },
+        ))
+        .await
+        .expect("second singleton cancel event should send successfully");
+
+    let started = wait_for_value(&started_runs, Duration::from_secs(15), |runs| {
+        runs.contains_key("first") && runs.contains_key("second")
+    })
+    .await;
+    let second_run_id = started
+        .get("second")
+        .cloned()
+        .expect("second singleton cancel run should exist");
+
+    let first_run =
+        wait_for_run_status_matching(&first_run_id, Duration::from_secs(20), |status| {
+            status.to_ascii_lowercase().contains("cancel")
+        })
+        .await;
+    let second_run =
+        wait_for_run_status(&second_run_id, "Completed", Duration::from_secs(20)).await;
+
+    assert!(first_run.status.to_ascii_lowercase().contains("cancel"));
+    assert_eq!(second_run.output, json!({ "message": "second" }));
+    assert_eq!(
+        completed_messages.lock().unwrap().clone(),
+        vec!["second".to_string()]
     );
 }
 
@@ -685,8 +902,10 @@ async fn concurrency_limit_serializes_step_execution_across_runs() {
         .await
         .expect("first concurrency event should send successfully");
 
-    wait_for_value(&step_starts, Duration::from_secs(10), |starts| starts.contains_key("first"))
-        .await;
+    wait_for_value(&step_starts, Duration::from_secs(10), |starts| {
+        starts.contains_key("first")
+    })
+    .await;
 
     client
         .send_event(&Event::new(
@@ -762,8 +981,10 @@ async fn throttle_queues_runs_instead_of_dropping_them() {
         .await
         .expect("first throttled event should send successfully");
 
-    wait_for_value(&run_starts, Duration::from_secs(10), |starts| starts.contains_key("first"))
-        .await;
+    wait_for_value(&run_starts, Duration::from_secs(10), |starts| {
+        starts.contains_key("first")
+    })
+    .await;
 
     client
         .send_event(&Event::new(
