@@ -1952,7 +1952,10 @@ mod tests {
                 "timeout": "30s"
             })
         );
-        assert_eq!(main_function["priority"], json!({ "run": "event.data.priority" }));
+        assert_eq!(
+            main_function["priority"],
+            json!({ "run": "event.data.priority" })
+        );
         assert_eq!(
             main_function["concurrency"],
             json!([{
@@ -1996,7 +1999,10 @@ mod tests {
                 "expression": "event.data.function_id == \"test-app-first\""
             }])
         );
-        assert_eq!(failure_function["steps"]["step"]["retries"], json!({ "attempts": 0 }));
+        assert_eq!(
+            failure_function["steps"]["step"]["retries"],
+            json!({ "attempts": 0 })
+        );
         assert!(failure_function.get("concurrency").is_none());
         assert!(failure_function.get("singleton").is_none());
     }
