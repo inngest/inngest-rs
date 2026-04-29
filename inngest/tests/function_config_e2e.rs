@@ -537,27 +537,32 @@ async fn priority_prefers_higher_priority_runs_once_concurrency_unblocks() {
     })
     .await;
 
-    client
-        .send_event(&Event::new(
-            &event_name,
-            PrioritizedEventData {
-                message: "low".to_string(),
-                priority: -10,
-            },
-        ))
-        .await
-        .expect("low priority event should send successfully");
+    let future_ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock should be after unix epoch")
+        .as_millis() as i64
+        + 3_000;
+    let low = Event::new(
+        &event_name,
+        PrioritizedEventData {
+            message: "low".to_string(),
+            priority: -10,
+        },
+    )
+    .timestamp(future_ts);
+    let high = Event::new(
+        &event_name,
+        PrioritizedEventData {
+            message: "high".to_string(),
+            priority: 10,
+        },
+    )
+    .timestamp(future_ts);
 
     client
-        .send_event(&Event::new(
-            &event_name,
-            PrioritizedEventData {
-                message: "high".to_string(),
-                priority: 10,
-            },
-        ))
+        .send_events(&[&low, &high])
         .await
-        .expect("high priority event should send successfully");
+        .expect("priority events should send successfully");
 
     let starts = wait_for_value(&step_starts, Duration::from_secs(20), |starts| {
         starts.len() == 3
