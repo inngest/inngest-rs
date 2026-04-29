@@ -113,6 +113,7 @@ impl Inngest {
             opts,
             trigger,
             func: Box::new(move |input, step| func(input, step).boxed()),
+            on_failure: None,
         }
     }
 
