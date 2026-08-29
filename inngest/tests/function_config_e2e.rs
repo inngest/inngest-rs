@@ -485,7 +485,7 @@ async fn priority_prefers_higher_priority_runs_once_concurrency_unblocks() {
     let func: ServableFn<PrioritizedEventData, Error> = client.create_function(
         FunctionOpts::new("priority-parent")
             .name("Priority Parent")
-            .priority(FunctionPriority::new().run("event.data.priority"))
+            .priority(FunctionPriority::new().run("int(event.data.priority)"))
             .concurrency(FunctionConcurrency::limit(1)),
         Trigger::event(&event_name),
         move |input: Input<PrioritizedEventData>, step: StepTool| {
@@ -504,7 +504,7 @@ async fn priority_prefers_higher_priority_runs_once_concurrency_unblocks() {
                                 step_starts_capture.lock().unwrap().push(message.clone());
 
                                 if message == "blocker" {
-                                    tokio::time::sleep(Duration::from_millis(1500)).await;
+                                    tokio::time::sleep(Duration::from_secs(5)).await;
                                 }
 
                                 Ok::<_, E2eTestError>(message)
@@ -537,32 +537,30 @@ async fn priority_prefers_higher_priority_runs_once_concurrency_unblocks() {
     })
     .await;
 
-    let future_ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock should be after unix epoch")
-        .as_millis() as i64
-        + 3_000;
     let low = Event::new(
         &event_name,
         PrioritizedEventData {
             message: "low".to_string(),
-            priority: -10,
+            priority: 0,
         },
-    )
-    .timestamp(future_ts);
+    );
     let high = Event::new(
         &event_name,
         PrioritizedEventData {
             message: "high".to_string(),
-            priority: 10,
+            priority: 5,
         },
-    )
-    .timestamp(future_ts);
+    );
 
     client
-        .send_events(&[&low, &high])
+        .send_event(&low)
         .await
-        .expect("priority events should send successfully");
+        .expect("low priority event should send successfully");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    client
+        .send_event(&high)
+        .await
+        .expect("high priority event should send successfully");
 
     let starts = wait_for_value(&step_starts, Duration::from_secs(20), |starts| {
         starts.len() == 3
