@@ -1,0 +1,61 @@
+name: Update Inngest dev server
+
+on:
+  schedule:
+    - cron: "23 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-inngest
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: cachix/install-nix-action@b85815f71a6de0ddee80b8a80a98d43f4bcc66c7 # v31
+
+      - name: Update Inngest input
+        id: update
+        run: |
+          nix flake update inngest
+          if git diff --quiet -- flake.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Inngest input is already up to date." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Validate here as well: PR workflows created with GITHUB_TOKEN may
+      # require approval. RELEASE_TOKEN can enable automatic PR CI fanout.
+      - name: Validate updated dev server
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          nix flake check --all-systems --no-build
+          nix develop -c inngest version
+          nix develop -c make test-e2e
+          git diff --check
+
+      - name: Create or update pull request
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
+        with:
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          branch: automated/update-inngest
+          add-paths: flake.lock
+          draft: false
+          commit-message: "chore(nix): update Inngest dev server"
+          title: "chore(nix): update Inngest dev server"
+          body: |
+            Updates the pinned `inngest/inngest.nix` input to its latest revision.
+            This picks up packaged stable releases and packaging fixes, not Inngest server main.
+
+            Before publishing this update, the workflow evaluated all supported dev shells
+            and ran the SDK end-to-end tests against the updated dev server on x86_64 Linux.
+
+            [Workflow run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
