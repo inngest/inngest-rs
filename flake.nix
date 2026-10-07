@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    inngest.url = "github:inngest/inngest.nix";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -15,10 +16,11 @@
       self,
       nixpkgs,
       flake-utils,
+      inngest,
       rust-overlay,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    flake-utils.lib.eachSystem (builtins.attrNames inngest.packages) (
       system:
       let
         pkgs = import nixpkgs {
@@ -41,7 +43,7 @@
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             rustToolchain
-            inngest
+            inngest.packages.${system}.default
 
             # tools
             git-cliff
